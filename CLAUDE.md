@@ -73,6 +73,30 @@ regular schedulers.
 | `WEEKLY_SCHEDULER_TIME` | `0 1 * * 5` | Cron — 01:00 ET, Friday |
 | `LOG_LEVEL` | `INFO` | |
 
+## Coding Guidelines
+
+### Library Versions & Documentation
+
+Before writing any code that uses a third-party library:
+
+1. **Check the pinned version** — read `requirements.txt` (or `pyproject.toml`)
+   to find the exact version in use. Never assume a version from memory.
+2. **Fetch targeted docs via the `context7-plugin:docs-researcher` agent** — use
+   this agent to retrieve the specific section of documentation relevant to what
+   you are about to write (e.g., "APScheduler cron trigger API", "SQLAlchemy
+   async session usage"). Pass the library name, pinned version, and the specific
+   topic or API surface you need. Do not fetch entire library docs — be specific.
+
+**Workflow**:
+```
+1. Read requirements.txt → find pinned version for the library
+2. Spawn context7-plugin:docs-researcher with: library, version, specific topic
+3. Write code using only APIs confirmed in the returned docs
+```
+
+This prevents version mismatch bugs where training data reflects an older or
+newer API than what is actually installed.
+
 ## Technology Stack (see system_design.md for rationale)
 
 | Layer | Technology |
