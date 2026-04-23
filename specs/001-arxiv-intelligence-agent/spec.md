@@ -93,18 +93,23 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 - What happens when arXiv is unavailable during the scheduled pull? → Retry up to 3 times with exponential backoff; if all fail, record the day as a **fetch-failure skip** (distinct from a no-papers skip). No backfill in v1 — intentionally kept simple; backfill-on-recovery is a designated future upgrade path. The weekly digest excludes fetch-failure days but MUST note that those dates were skipped due to an external API failure, not due to absence of papers. If a client requests a fetch-failure date via the digest endpoint, the system returns a message such as "Data retrieval from arXiv failed after 3 attempts on this date — no digest available."
 - How does the system handle papers that span multiple research topics? → One primary topic for grouping; secondary tags stored for discoverability; no duplicate digest entries.
 - What happens when no new papers are published on a given day? → No digest is generated for that date. The weekly digest excludes skipped days entirely (no empty topic sections). If a client requests a skipped date via the digest endpoint, the system returns a clear "no new papers published on this date" message rather than an empty document.
+- What happens when a client requests a Friday or Saturday digest? → These are **no-announcement** days — arXiv structurally never publishes on Fridays or Saturdays. The endpoint returns "arXiv does not publish on Fridays or Saturdays." This is distinct from a no-papers skip (which is unexpected) and from a fetch-failure skip.
 - How does the system respond to a Q&A query when the knowledge base is empty? → Return a successful response with a human-readable message: "No digests are available yet within the current window — please check back after the first digest is generated." Not treated as an error or an out-of-scope rejection.
-- What if a weekly digest is requested but fewer than 7 days of daily digests exist? → No minimum threshold. The weekly digest is generated with whatever daily digests are available for that week. Skipped days (both no-papers and fetch-failure types) are noted in the weekly digest with their reasons. If the requested week is still ongoing (i.e., the weekly scheduler has not yet run for it), the endpoint returns "Week still ongoing — weekly digest not yet generated."
+- What if a weekly digest is requested but fewer than 7 days of daily digests exist? → No minimum threshold. The arXiv announcement week is Sun–Thu (5 days); Fri/Sat are never part of a weekly digest. The weekly digest is generated from whatever announcement days have content. Skipped days (no-papers and fetch-failure types) are noted in the coverage note. If the requested week is still ongoing (weekly scheduler has not yet run), the endpoint returns "Week still ongoing — weekly digest not yet generated."
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST pull new ML papers from arXiv on a daily schedule.
-  If the pull fails, the system MUST retry up to 3 times with exponential backoff.
-  If all retries fail, the day MUST be recorded as a **fetch-failure skip** —
-  distinct from a no-papers skip — so downstream logic (weekly digest, digest
-  endpoint) can communicate the correct reason to consumers.
+- **FR-001**: The system MUST pull new ML papers from arXiv on a daily schedule,
+  firing at 20:30 ET on announcement days (Sunday through Thursday). arXiv does
+  not publish on Fridays or Saturdays; no fetch is attempted on those days and
+  they are recorded as a **no-announcement** state distinct from all other skip
+  types. On first run, the system MUST backfill from `INCEPTION_DATE` (env var)
+  through the current date before handing off to the regular daily schedule,
+  running the full pipeline for each historical announcement day.
+  If a pull fails, the system MUST retry up to 3 times with exponential backoff.
+  If all retries fail, the day MUST be recorded as a **fetch-failure skip**.
   Backfill-on-recovery is out of scope for v1 and reserved for a future upgrade.
 - **FR-002**: The system MUST extract key contributions, methodologies, and benchmark
   results from each fetched paper
@@ -117,21 +122,30 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 - **FR-004**: The system MUST flag papers meeting the groundbreaking criteria and
   include a reasoning explanation for each flagged paper
 - **FR-005**: The system MUST generate a daily research digest summarizing new papers
-  grouped by topic. Two skip types are defined and MUST be distinguishable:
-  (1) **no-papers skip** — arXiv was reachable but published no papers that date
-  (e.g., weekend/holiday); digest endpoint returns "No new papers were published on
-  this date."
-  (2) **fetch-failure skip** — arXiv was unreachable after 3 retries; digest endpoint
+  grouped by topic. Three date states are defined and MUST be distinguishable:
+  (1) **no-announcement** — Friday or Saturday; arXiv structurally never publishes
+  these days; digest endpoint returns "arXiv does not publish on Fridays or
+  Saturdays."
+  (2) **no-papers skip** — arXiv was reachable on an announcement day but published
+  no papers (e.g., holiday); digest endpoint returns "No new papers were published
+  on this date."
+  (3) **fetch-failure skip** — arXiv was unreachable after 3 retries; digest endpoint
   returns "Data retrieval from arXiv failed after 3 attempts on this date — no digest
   available."
-- **FR-006**: The system MUST generate a weekly research digest (covering Mon–Sun)
-  via a scheduler that runs every Monday morning. There is no minimum daily digest
-  threshold — the weekly digest is generated from whatever daily digests exist for
-  that week. The weekly digest MUST include a coverage note listing any skipped
-  days with their reason (no-papers skip or fetch-failure skip). The weekly digest
-  endpoint MUST accept a week identifier (e.g., start date) from the client; if the
-  requested week is still in progress (weekly scheduler has not yet run), the
-  endpoint MUST return "Week still ongoing — weekly digest not yet generated."
+- **FR-006**: The system MUST generate a weekly research digest covering the arXiv
+  announcement week (Sunday through Thursday) via a scheduler that runs every
+  Friday at 01:00 ET — after Thursday's daily digest (the last of the week) has
+  fully completed. Friday and Saturday are never included as they carry
+  no-announcement status. There is no minimum daily digest threshold — the weekly
+  digest is generated from whatever announcement days have content. The weekly
+  digest MUST include a coverage note listing any skipped days with their reason
+  (no-papers skip or fetch-failure skip; no-announcement days are not listed as
+  skips — they are expected absences). The weekly digest endpoint MUST accept a
+  week identifier (Sunday start date) from the client; if the requested week is
+  still in progress (weekly scheduler has not yet run), the endpoint MUST return
+  "Week still ongoing — weekly digest not yet generated." During inception backfill,
+  the system generates one weekly digest per historical Sun–Thu week in
+  chronological order before the regular Friday scheduler takes over.
 - **FR-007**: The system MUST expose a digest endpoint to retrieve available digests
   (daily and weekly) by time period. Responses MUST use a JSON envelope containing
   structured metadata fields (type, date, paper_count, groundbreaking_count) alongside
@@ -164,10 +178,11 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 
 ### Key Entities
 
-- **Paper**: An arXiv publication with title, authors, abstract, submission date,
-  one primary topic category (used for digest grouping), zero or more secondary
-  topic tags (for cross-topic discoverability), extracted key contributions,
-  methodologies, benchmark results, and a groundbreaking flag with reasoning
+- **Paper**: An arXiv publication with title, authors, author institutions,
+  abstract, submission date, one primary topic category (used for digest grouping),
+  zero or more secondary topic tags (for cross-topic discoverability), extracted
+  key contributions, methodologies, benchmark results, and a groundbreaking flag
+  with reasoning. Papers are searchable by title, authors, institutions, and date.
 - **Digest**: A structured research summary document covering a time period (daily
   or weekly), containing topic-grouped paper entries and — for weekly digests — a
   cross-paper comparison section. Each date in the system has one of three states:
@@ -209,12 +224,19 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 
 - arXiv's public data feed is the sole paper source; no institutional access or paid
   subscription is assumed
+- arXiv publishes new listings at 20:00 ET, Sunday through Thursday only. Fridays
+  and Saturdays have no announcements — this is a structural property of arXiv,
+  not an error condition
 - The initial release targets ML/AI arXiv categories (cs.LG, cs.CV, cs.CL, cs.AI,
   cs.RO, stat.ML); this list is configurable
 - Endpoint authentication is handled by existing infrastructure and is out of scope
   for this feature
-- "Weekly digest" covers Monday–Sunday and is generated by a scheduler that runs
-  every Monday morning; there is no minimum daily content threshold for generation
+- `INCEPTION_DATE` (env var, required) defines the earliest date the system
+  backfills from on first run; the full pipeline runs for each historical
+  announcement day from that date to the present
+- "Weekly digest" covers the arXiv announcement week (Sunday through Thursday) and
+  is generated by a scheduler that runs every Friday at 01:00 ET; there is no
+  minimum daily content threshold for generation
 - The system operates as an always-on service, not a one-shot CLI tool
 - Digest content and Q&A knowledge base persist across service restarts
 - Digests are retained indefinitely and never auto-deleted; the digest endpoint
