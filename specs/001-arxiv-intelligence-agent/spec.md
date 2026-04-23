@@ -90,34 +90,64 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 
 ### Edge Cases
 
-- What happens when arXiv is unavailable during the scheduled pull?
-- How does the system handle papers that span multiple research topics?
-- What happens when no new papers are published on a given day?
-- How does the system respond to a Q&A query when the knowledge base is empty?
-- What if a weekly digest is requested but fewer than 7 days of daily digests exist?
+- What happens when arXiv is unavailable during the scheduled pull? → Retry up to 3 times with exponential backoff; if all fail, record the day as a **fetch-failure skip** (distinct from a no-papers skip). No backfill in v1 — intentionally kept simple; backfill-on-recovery is a designated future upgrade path. The weekly digest excludes fetch-failure days but MUST note that those dates were skipped due to an external API failure, not due to absence of papers. If a client requests a fetch-failure date via the digest endpoint, the system returns a message such as "Data retrieval from arXiv failed after 3 attempts on this date — no digest available."
+- How does the system handle papers that span multiple research topics? → One primary topic for grouping; secondary tags stored for discoverability; no duplicate digest entries.
+- What happens when no new papers are published on a given day? → No digest is generated for that date. The weekly digest excludes skipped days entirely (no empty topic sections). If a client requests a skipped date via the digest endpoint, the system returns a clear "no new papers published on this date" message rather than an empty document.
+- How does the system respond to a Q&A query when the knowledge base is empty? → Return a successful response with a human-readable message: "No digests are available yet within the current window — please check back after the first digest is generated." Not treated as an error or an out-of-scope rejection.
+- What if a weekly digest is requested but fewer than 7 days of daily digests exist? → No minimum threshold. The weekly digest is generated with whatever daily digests are available for that week. Skipped days (both no-papers and fetch-failure types) are noted in the weekly digest with their reasons. If the requested week is still ongoing (i.e., the weekly scheduler has not yet run for it), the endpoint returns "Week still ongoing — weekly digest not yet generated."
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST pull new ML papers from arXiv on a daily schedule
+- **FR-001**: The system MUST pull new ML papers from arXiv on a daily schedule.
+  If the pull fails, the system MUST retry up to 3 times with exponential backoff.
+  If all retries fail, the day MUST be recorded as a **fetch-failure skip** —
+  distinct from a no-papers skip — so downstream logic (weekly digest, digest
+  endpoint) can communicate the correct reason to consumers.
+  Backfill-on-recovery is out of scope for v1 and reserved for a future upgrade.
 - **FR-002**: The system MUST extract key contributions, methodologies, and benchmark
   results from each fetched paper
 - **FR-003**: The system MUST group papers by research topic (e.g., Large Language
   Models, Computer Vision, Reinforcement Learning, Multimodal AI); the topic list
-  MUST be configurable
+  MUST be configurable. Each paper MUST be assigned exactly one primary topic for
+  digest grouping; papers spanning multiple topics MAY additionally carry secondary
+  topic tags that are stored on the paper record and used for cross-topic
+  discoverability but do not cause duplicate entries in the digest.
 - **FR-004**: The system MUST flag papers meeting the groundbreaking criteria and
   include a reasoning explanation for each flagged paper
 - **FR-005**: The system MUST generate a daily research digest summarizing new papers
-  grouped by topic
-- **FR-006**: The system MUST generate a weekly research digest synthesizing and
-  comparing the week's papers
+  grouped by topic. Two skip types are defined and MUST be distinguishable:
+  (1) **no-papers skip** — arXiv was reachable but published no papers that date
+  (e.g., weekend/holiday); digest endpoint returns "No new papers were published on
+  this date."
+  (2) **fetch-failure skip** — arXiv was unreachable after 3 retries; digest endpoint
+  returns "Data retrieval from arXiv failed after 3 attempts on this date — no digest
+  available."
+- **FR-006**: The system MUST generate a weekly research digest (covering Mon–Sun)
+  via a scheduler that runs every Monday morning. There is no minimum daily digest
+  threshold — the weekly digest is generated from whatever daily digests exist for
+  that week. The weekly digest MUST include a coverage note listing any skipped
+  days with their reason (no-papers skip or fetch-failure skip). The weekly digest
+  endpoint MUST accept a week identifier (e.g., start date) from the client; if the
+  requested week is still in progress (weekly scheduler has not yet run), the
+  endpoint MUST return "Week still ongoing — weekly digest not yet generated."
 - **FR-007**: The system MUST expose a digest endpoint to retrieve available digests
-  (daily and weekly) by time period
+  (daily and weekly) by time period. Responses MUST use a JSON envelope containing
+  structured metadata fields (type, date, paper_count, groundbreaking_count) alongside
+  a per-topic `body` field of rendered Markdown, enabling both programmatic access
+  and direct human-readable rendering without a separate transform step.
 - **FR-008**: The system MUST expose a Q&A endpoint that accepts natural language
-  questions about the digests
+  questions about the digests; the queryable knowledge base is scoped to a rolling
+  window of the most recent N days, where N is read from the `RAG_WINDOW_DAYS`
+  environment variable (default: 90 days). Runtime reconfiguration via admin
+  endpoint is out of scope for v1 and reserved for a future upgrade.
 - **FR-009**: The Q&A endpoint MUST reject queries unrelated to the research digests
-  with an informative rejection message
+  with an informative rejection message. If the knowledge base is empty (no digests
+  fall within the current `RAG_WINDOW_DAYS` window), the endpoint MUST return a
+  successful response with the message "No digests are available yet within the
+  current window — please check back after the first digest is generated." This
+  state MUST NOT be treated as an error or an out-of-scope rejection.
 - **FR-010**: The Q&A endpoint MUST return answers grounded in digest content, citing
   relevant papers or digest sections
 - **FR-011**: The system MUST classify a paper as groundbreaking when it satisfies
@@ -135,11 +165,15 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 ### Key Entities
 
 - **Paper**: An arXiv publication with title, authors, abstract, submission date,
-  topic category, extracted key contributions, methodologies, benchmark results,
-  and a groundbreaking flag with reasoning
+  one primary topic category (used for digest grouping), zero or more secondary
+  topic tags (for cross-topic discoverability), extracted key contributions,
+  methodologies, benchmark results, and a groundbreaking flag with reasoning
 - **Digest**: A structured research summary document covering a time period (daily
   or weekly), containing topic-grouped paper entries and — for weekly digests — a
-  cross-paper comparison section
+  cross-paper comparison section. Each date in the system has one of three states:
+  **published** (digest exists), **no-papers skip** (arXiv had no content that day),
+  or **fetch-failure skip** (arXiv was unreachable after 3 retries). The latter two
+  produce no digest document but are recorded with their distinct reasons.
 - **Topic**: A research domain grouping used to categorize papers (configurable list)
 - **Q&A Query**: A natural language question submitted against the digest knowledge
   base, paired with a grounded answer and source citations
@@ -161,6 +195,16 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 - **SC-006**: Digest retrieval responds within 2 seconds for any requested digest
 - **SC-007**: Q&A responses are returned within 10 seconds for any in-scope query
 
+## Clarifications
+
+### Session 2026-04-22
+
+- Q: What format does the digest endpoint return to consumers? → A: JSON envelope with structured metadata fields plus a per-topic `body` field containing rendered Markdown (Option B).
+- Q: Which digests are queryable via the RAG Q&A endpoint? → A: Rolling window of most recent N days, configured via environment variable `RAG_WINDOW_DAYS` (default 90). Runtime admin endpoint deferred to a future upgrade.
+- Q: How should a paper spanning multiple research topics be handled? → A: Assign one primary topic for digest grouping; store optional secondary topic tags on the paper for cross-topic discoverability (Option B).
+- Q: What should the system do when the arXiv pull fails? → A: Retry up to 3 times with exponential backoff; skip the day permanently if all retries fail (gap in digest history). Backfill-on-recovery explicitly deferred to a future upgrade.
+- Q: How long are digests retained? → A: Indefinitely — no auto-deletion. All digests remain accessible via the digest endpoint regardless of age. RAG queryability is separately bounded by `RAG_WINDOW_DAYS`; older digests exist but are not indexed for Q&A.
+
 ## Assumptions
 
 - arXiv's public data feed is the sole paper source; no institutional access or paid
@@ -169,8 +213,13 @@ digest content. Submit out-of-scope questions and verify they are rejected.
   cs.RO, stat.ML); this list is configurable
 - Endpoint authentication is handled by existing infrastructure and is out of scope
   for this feature
-- "Weekly digest" covers Monday–Sunday and is generated at end of week
+- "Weekly digest" covers Monday–Sunday and is generated by a scheduler that runs
+  every Monday morning; there is no minimum daily content threshold for generation
 - The system operates as an always-on service, not a one-shot CLI tool
 - Digest content and Q&A knowledge base persist across service restarts
+- Digests are retained indefinitely and never auto-deleted; the digest endpoint
+  provides access to all historical digests regardless of age. RAG queryability
+  is separately bounded by `RAG_WINDOW_DAYS` — older digests exist in storage
+  but are not included in the Q&A knowledge base index.
 - Paper volume is expected to be in the range of 100–500 new papers per day across
   monitored categories
