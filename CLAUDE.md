@@ -73,6 +73,21 @@ regular schedulers.
 | `WEEKLY_SCHEDULER_TIME` | `0 1 * * 5` | Cron — 01:00 ET, Friday |
 | `LOG_LEVEL` | `INFO` | |
 
+## Technology Stack (see system_design.md for rationale)
+
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Python 3.12 |
+| API | FastAPI |
+| Scheduler | APScheduler |
+| Database | PostgreSQL 16 + pgvector (single DB for all storage + vector search) |
+| ORM | SQLAlchemy + Alembic |
+| Embeddings | `BAAI/bge-small-en-v1.5` via `sentence-transformers` (local, no API cost) |
+| LLM heavy | `claude-sonnet-4-6` (extraction, detection, generation, Q&A) |
+| LLM light | `claude-haiku-4-5-20251001` (topic classification, scope detection) |
+| arXiv | `arxiv` library (metadata) + `httpx` (HTML full text) + `pdfplumber` (PDF fallback) |
+| Tooling | `uv`, `ruff`, `pytest` + `pytest-asyncio` |
+
 ## Key Design Decisions (already resolved — see spec for full rationale)
 
 - **Digest format**: JSON envelope with per-topic rendered Markdown `body` field

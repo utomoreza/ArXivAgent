@@ -88,6 +88,49 @@ The system has two distinct runtime modes:
 
 ---
 
+## Technology Stack
+
+| Layer | Technology | Rationale |
+|-------|-----------|-----------|
+| **Runtime** | Python 3.12 | Best ecosystem for ML/AI tooling, LLM SDKs, and arXiv clients |
+| **API Framework** | FastAPI | Async-first, automatic OpenAPI docs, type-safe; fits an API-only service |
+| **Scheduler** | APScheduler | In-process cron scheduler; no separate infrastructure needed for v1 |
+| **Database** | PostgreSQL 16 | Relational, robust JSON support for digest bodies; single DB for papers, digests, and date records |
+| **ORM / Migrations** | SQLAlchemy + Alembic | Mature Python ORM with schema migration support |
+| **Vector Store** | pgvector (PostgreSQL extension) | Stores embeddings in the same PostgreSQL instance; no separate vector DB service needed |
+| **Embedding Model** | `BAAI/bge-small-en-v1.5` via `sentence-transformers` | High-quality embeddings for ML text; runs locally with no per-token API cost |
+| **LLM — heavy tasks** | `claude-sonnet-4-6` via Anthropic SDK | Paper extraction, groundbreaking detection, digest generation, weekly synthesis, Q&A answers |
+| **LLM — light tasks** | `claude-haiku-4-5-20251001` via Anthropic SDK | Topic classification, out-of-scope query detection; lower cost for high-frequency calls |
+| **arXiv metadata** | `arxiv` Python library | Community wrapper around arXiv API for structured metadata (title, authors, abstract) |
+| **arXiv full text** | `httpx` (async) | Fetches `arxiv.org/html/{id}` for contributions, methods, benchmarks |
+| **PDF fallback parser** | `pdfplumber` | Structured text extraction from academic PDFs when HTML is unavailable |
+| **Dependency management** | `uv` | Fast Python package and project manager |
+| **Testing** | `pytest` + `pytest-asyncio` | Standard Python testing with async support for FastAPI and scheduler components |
+| **Linting / Formatting** | `ruff` | Fast, all-in-one Python linter and formatter |
+
+### Key Stack Decisions
+
+**PostgreSQL + pgvector over a separate vector DB**: keeping one infrastructure
+component (PostgreSQL) handles relational data, JSON digest bodies, and vector
+embeddings in v1. A dedicated vector DB (Qdrant, Weaviate) is a future upgrade if
+pgvector's performance proves insufficient at scale.
+
+**Local embeddings over API embeddings**: at 100–500 papers/day, embedding costs
+on a hosted API accumulate quickly. `BAAI/bge-small-en-v1.5` runs in-process,
+has strong performance on scientific/ML text, and keeps the system self-contained.
+
+**Two Claude model tiers**: Sonnet for tasks requiring deep reasoning (extraction,
+generation, Q&A); Haiku for binary/classification tasks (is this query in-scope?
+what topic does this paper belong to?) where latency and cost matter more than
+depth.
+
+**APScheduler over Celery/Redis**: Celery adds a message broker dependency for a
+scheduling problem that two cron jobs can solve. APScheduler runs in-process, uses
+the same cron expressions defined in `DAILY_SCHEDULER_TIME` and
+`WEEKLY_SCHEDULER_TIME`, and is replaceable later if task queue needs emerge.
+
+---
+
 ## 3. Component Design
 
 ### 3.1 Schedulers
