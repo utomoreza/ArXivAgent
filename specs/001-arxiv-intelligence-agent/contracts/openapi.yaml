@@ -1,0 +1,519 @@
+openapi: "3.1.0"
+info:
+  title: ArXiv Intelligence Agent API
+  version: "1.0.0"
+  description: |
+    ArXivAgent exposes structured ML research paper digests and a RAG-grounded
+    Q&A interface. All responses use a consistent JSON envelope.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+
+  /digests/daily/{date}:
+    get:
+      summary: Retrieve a daily digest or its date state
+      operationId: getDailyDigest
+      parameters:
+        - name: date
+          in: path
+          required: true
+          description: ISO date string (YYYY-MM-DD) for the requested announcement day
+          schema:
+            type: string
+            format: date
+            example: "2026-04-21"
+      responses:
+        "200":
+          description: |
+            Returns one of six states depending on the date's record:
+            - `ok` — digest exists and is returned in `data`
+            - `skipped` — arXiv was reachable but published no papers (no_papers_skip)
+            - `fetch_failure` — all 3 arXiv fetch retries failed (fetch_failure_skip)
+            - `no_announcement` — Friday or Saturday; arXiv never publishes
+            - `not_found` — date is before INCEPTION_DATE
+            - `not_available` — date is in the future
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DailyDigestResponse'
+                  - $ref: '#/components/schemas/SkippedResponse'
+                  - $ref: '#/components/schemas/FetchFailureResponse'
+                  - $ref: '#/components/schemas/NoAnnouncementResponse'
+                  - $ref: '#/components/schemas/NotFoundResponse'
+                  - $ref: '#/components/schemas/NotAvailableResponse'
+              examples:
+                ok:
+                  summary: Digest exists
+                  value:
+                    status: ok
+                    data:
+                      type: daily
+                      date: "2026-04-21"
+                      generated_at: "2026-04-21T21:05:00Z"
+                      paper_count: 47
+                      groundbreaking_count: 2
+                      topics:
+                        - name: "Large Language Models"
+                          paper_count: 18
+                          body: "## Large Language Models\n\n..."
+                    reason: null
+                no_papers_skip:
+                  summary: No papers published
+                  value:
+                    status: skipped
+                    data: null
+                    reason: "No new papers were published on this date."
+                fetch_failure:
+                  summary: arXiv unreachable
+                  value:
+                    status: fetch_failure
+                    data: null
+                    reason: "Data retrieval from arXiv failed after 3 attempts on this date — no digest available."
+                no_announcement:
+                  summary: Friday or Saturday
+                  value:
+                    status: no_announcement
+                    data: null
+                    reason: "arXiv does not publish on Fridays or Saturdays."
+                not_found:
+                  summary: Before inception date
+                  value:
+                    status: not_found
+                    data: null
+                    reason: "No records available before system inception on 2026-01-01."
+                not_available:
+                  summary: Future date
+                  value:
+                    status: not_available
+                    data: null
+                    reason: "Date is in the future."
+
+  /digests/weekly/{week_start_date}:
+    get:
+      summary: Retrieve a weekly digest or its availability state
+      operationId: getWeeklyDigest
+      parameters:
+        - name: week_start_date
+          in: path
+          required: true
+          description: |
+            ISO date string (YYYY-MM-DD) for the Sunday that starts the arXiv
+            announcement week (Sun–Thu). Must be a Sunday.
+          schema:
+            type: string
+            format: date
+            example: "2026-04-19"
+      responses:
+        "200":
+          description: |
+            Returns one of three states:
+            - `ok` — weekly digest exists
+            - `pending` — week is still in progress (scheduler has not yet run)
+            - `not_found` — week is before INCEPTION_DATE
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WeeklyDigestResponse'
+                  - $ref: '#/components/schemas/PendingResponse'
+                  - $ref: '#/components/schemas/NotFoundResponse'
+              examples:
+                ok:
+                  summary: Weekly digest exists
+                  value:
+                    status: ok
+                    data:
+                      type: weekly
+                      week_start: "2026-04-19"
+                      week_end: "2026-04-23"
+                      generated_at: "2026-04-24T01:05:00Z"
+                      paper_count: 210
+                      groundbreaking_count: 8
+                      coverage_note:
+                        announcement_days: ["Sun", "Mon", "Tue", "Wed", "Thu"]
+                        days_with_content: ["2026-04-19", "2026-04-20", "2026-04-21"]
+                        no_papers_skips: []
+                        fetch_failure_skips: ["2026-04-22", "2026-04-23"]
+                      sections:
+                        benchmark_comparisons: "## Benchmark Comparisons\n\n..."
+                        trend_synthesis: "## Trend Synthesis\n\n..."
+                        cross_paper_analysis: "## Cross-Paper Analysis\n\n..."
+                    reason: null
+                pending:
+                  summary: Week still ongoing
+                  value:
+                    status: pending
+                    data: null
+                    reason: "Week still ongoing — weekly digest not yet generated."
+                not_found:
+                  summary: Before inception date
+                  value:
+                    status: not_found
+                    data: null
+                    reason: "No records available before system inception on 2026-01-01."
+        "400":
+          description: week_start_date is not a Sunday
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "validation_error"
+                message: "week_start_date must be a Sunday (arXiv announcement week starts on Sunday)."
+
+  /qa:
+    post:
+      summary: Ask a natural language question about the research digests
+      operationId: queryDigests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QARequest'
+            example:
+              question: "Which papers this week improved MMLU benchmark performance?"
+      responses:
+        "200":
+          description: |
+            Returns one of three states:
+            - `ok` — in-scope question, answer generated with source citations
+            - `rejected` — question is out of scope (not about research digests)
+            - `empty` — knowledge base has no digests within the current RAG_WINDOW_DAYS
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/QAResponse'
+                  - $ref: '#/components/schemas/RejectedResponse'
+                  - $ref: '#/components/schemas/EmptyKBResponse'
+              examples:
+                ok:
+                  summary: In-scope answer
+                  value:
+                    status: ok
+                    data:
+                      answer: "Three papers this week improved MMLU: ..."
+                      sources:
+                        - arxiv_id: "2604.11023"
+                          title: "AdvancedLLM: Pushing MMLU to New Heights"
+                          date: "2026-04-21"
+                          chunk_type: content
+                    reason: null
+                rejected:
+                  summary: Out-of-scope question
+                  value:
+                    status: rejected
+                    data: null
+                    reason: "This agent only answers questions about the research digests."
+                empty:
+                  summary: Knowledge base empty
+                  value:
+                    status: empty
+                    data: null
+                    reason: "No digests are available yet within the current window — please check back after the first digest is generated."
+        "422":
+          description: Request body validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+
+    # Envelope schemas
+
+    DailyDigestResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        data:
+          $ref: '#/components/schemas/DailyDigest'
+        reason:
+          type: "null"
+
+    WeeklyDigestResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        data:
+          $ref: '#/components/schemas/WeeklyDigest'
+        reason:
+          type: "null"
+
+    QAResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        data:
+          $ref: '#/components/schemas/QAAnswer'
+        reason:
+          type: "null"
+
+    SkippedResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [skipped]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "No new papers were published on this date."
+
+    FetchFailureResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [fetch_failure]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "Data retrieval from arXiv failed after 3 attempts on this date — no digest available."
+
+    NoAnnouncementResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [no_announcement]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "arXiv does not publish on Fridays or Saturdays."
+
+    NotFoundResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [not_found]
+        data:
+          type: "null"
+        reason:
+          type: string
+
+    NotAvailableResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [not_available]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "Date is in the future."
+
+    PendingResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [pending]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "Week still ongoing — weekly digest not yet generated."
+
+    RejectedResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [rejected]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "This agent only answers questions about the research digests."
+
+    EmptyKBResponse:
+      type: object
+      required: [status, data, reason]
+      properties:
+        status:
+          type: string
+          enum: [empty]
+        data:
+          type: "null"
+        reason:
+          type: string
+          example: "No digests are available yet within the current window — please check back after the first digest is generated."
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    # Data schemas
+
+    DailyDigest:
+      type: object
+      required: [type, date, generated_at, paper_count, groundbreaking_count, topics]
+      properties:
+        type:
+          type: string
+          enum: [daily]
+        date:
+          type: string
+          format: date
+        generated_at:
+          type: string
+          format: date-time
+        paper_count:
+          type: integer
+          minimum: 0
+        groundbreaking_count:
+          type: integer
+          minimum: 0
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSection'
+
+    TopicSection:
+      type: object
+      required: [name, paper_count, body]
+      properties:
+        name:
+          type: string
+        paper_count:
+          type: integer
+          minimum: 1
+        body:
+          type: string
+          description: Rendered Markdown for this topic's papers
+
+    WeeklyDigest:
+      type: object
+      required: [type, week_start, week_end, generated_at, paper_count, groundbreaking_count, coverage_note, sections]
+      properties:
+        type:
+          type: string
+          enum: [weekly]
+        week_start:
+          type: string
+          format: date
+          description: Sunday of the announcement week
+        week_end:
+          type: string
+          format: date
+          description: Thursday of the announcement week
+        generated_at:
+          type: string
+          format: date-time
+        paper_count:
+          type: integer
+          minimum: 0
+        groundbreaking_count:
+          type: integer
+          minimum: 0
+        coverage_note:
+          $ref: '#/components/schemas/CoverageNote'
+        sections:
+          $ref: '#/components/schemas/WeeklySections'
+
+    CoverageNote:
+      type: object
+      required: [announcement_days, days_with_content, no_papers_skips, fetch_failure_skips]
+      properties:
+        announcement_days:
+          type: array
+          items:
+            type: string
+          example: ["Sun", "Mon", "Tue", "Wed", "Thu"]
+        days_with_content:
+          type: array
+          items:
+            type: string
+            format: date
+        no_papers_skips:
+          type: array
+          items:
+            type: string
+            format: date
+        fetch_failure_skips:
+          type: array
+          items:
+            type: string
+            format: date
+
+    WeeklySections:
+      type: object
+      required: [benchmark_comparisons, trend_synthesis, cross_paper_analysis]
+      properties:
+        benchmark_comparisons:
+          type: string
+          description: Rendered Markdown — side-by-side benchmark comparisons
+        trend_synthesis:
+          type: string
+          description: Rendered Markdown — per-topic weekly momentum
+        cross_paper_analysis:
+          type: string
+          description: Rendered Markdown — complementary/contradictory findings
+
+    QARequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    QAAnswer:
+      type: object
+      required: [answer, sources]
+      properties:
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/QASource'
+
+    QASource:
+      type: object
+      required: [arxiv_id, title, date, chunk_type]
+      properties:
+        arxiv_id:
+          type: string
+        title:
+          type: string
+        date:
+          type: string
+          format: date
+        chunk_type:
+          type: string
+          enum: [abstract, content]

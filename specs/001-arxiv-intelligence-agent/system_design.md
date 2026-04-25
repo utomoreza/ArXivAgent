@@ -485,6 +485,60 @@ Daily Scheduler fires at 20:30 ET (Sun–Thu)
   → RAG Indexer: index new digest content if date within RAG_WINDOW_DAYS
 ```
 
+```mermaid
+sequenceDiagram
+    participant DS as Daily Scheduler
+    participant AF as arXiv Fetcher
+    participant PP as Paper Processor
+    participant GD as Groundbreaking Detector
+    participant DDG as Daily Digest Generator
+    participant DB as Storage (DB)
+    participant RI as RAG Indexer
+
+    DS->>AF: trigger(date)
+    AF->>AF: fetch papers (arXiv API + HTML)
+    AF-->>DS: papers[]
+
+    loop for each paper
+        DS->>PP: process(paper)
+        PP->>PP: fetch metadata (arXiv API)
+        PP->>PP: fetch full text (arxiv.org/html/{id})
+        alt HTML unavailable
+            PP->>PP: fallback: parse PDF (pdfplumber)
+        end
+        PP->>PP: extract contributions, methodologies, benchmarks
+        PP->>PP: assign primary_topic + secondary_topics[]
+        PP-->>DS: processed_paper
+    end
+
+    loop for each processed_paper
+        DS->>GD: evaluate(paper)
+        GD->>GD: check benchmark improvement AND novel architecture
+        alt both criteria met
+            GD-->>DS: is_groundbreaking=true, reasoning
+        else criteria not met
+            GD-->>DS: is_groundbreaking=false
+        end
+    end
+
+    DS->>DDG: generate_digest(papers[], date)
+    DDG->>DDG: group by primary_topic, render Markdown per topic
+    DDG-->>DS: daily_digest
+
+    DS->>DB: persist papers[]
+    DS->>DB: persist daily_digest
+    DS->>DB: persist DateRecord(date, status=published)
+
+    DS->>RI: index(daily_digest, date)
+    RI->>RI: check date within RAG_WINDOW_DAYS
+    alt within window
+        RI->>RI: embed & store abstract_chunk + content_chunk per paper
+        RI-->>DS: indexed
+    else outside window
+        RI-->>DS: skipped (outside window)
+    end
+```
+
 ### 5.2 Daily Pipeline (arXiv Unavailable)
 
 ```
@@ -498,6 +552,33 @@ Daily Scheduler fires
   → No digest generated, no RAG indexing
 ```
 
+```mermaid
+sequenceDiagram
+    participant DS as Daily Scheduler
+    participant AF as arXiv Fetcher
+    participant DB as Storage (DB)
+
+    DS->>AF: trigger(date)
+
+    AF->>AF: attempt 1 → request arXiv
+    AF-->>AF: failure
+
+    AF->>AF: wait (exponential backoff)
+
+    AF->>AF: attempt 2 → request arXiv
+    AF-->>AF: failure
+
+    AF->>AF: wait (exponential backoff)
+
+    AF->>AF: attempt 3 → request arXiv
+    AF-->>AF: failure
+
+    AF-->>DS: all retries exhausted
+
+    DS->>DB: persist DateRecord(date, status=fetch_failure_skip)
+    Note over DS,DB: No digest generated. No RAG indexing.
+```
+
 ### 5.3 Daily Pipeline (No Papers Published)
 
 ```
@@ -505,6 +586,20 @@ Daily Scheduler fires
   → arXiv Fetcher: arXiv reachable, 0 papers returned
   → Store: Date Record (status: no_papers_skip)
   → No digest generated, no RAG indexing
+```
+
+```mermaid
+sequenceDiagram
+    participant DS as Daily Scheduler
+    participant AF as arXiv Fetcher
+    participant DB as Storage (DB)
+
+    DS->>AF: trigger(date)
+    AF->>AF: request arXiv (reachable, 0 papers returned)
+    AF-->>DS: papers=[]
+
+    DS->>DB: persist DateRecord(date, status=no_papers_skip)
+    Note over DS,DB: No digest generated. No RAG indexing.
 ```
 
 ### 5.4 Weekly Digest Generation
@@ -520,6 +615,34 @@ Weekly Scheduler fires at 01:00 ET Friday
   → Store: persist weekly digest
 ```
 
+```mermaid
+sequenceDiagram
+    participant WS as Weekly Scheduler
+    participant DB as Storage (DB)
+    participant LLM as LLM (claude-sonnet-4-6)
+
+    WS->>DB: read DateRecords for prior Sun–Thu
+    DB-->>WS: date_records[]
+
+    WS->>DB: read daily_digests where status=published
+    DB-->>WS: daily_digests[]
+
+    WS->>WS: build CoverageNote
+    Note over WS: days_with_content, no_papers_skips,<br/>fetch_failure_skips
+
+    WS->>LLM: generate benchmark_comparisons(daily_digests[])
+    LLM-->>WS: benchmark_comparisons (Markdown)
+
+    WS->>LLM: generate trend_synthesis(daily_digests[])
+    LLM-->>WS: trend_synthesis (Markdown)
+
+    WS->>LLM: generate cross_paper_analysis(daily_digests[])
+    LLM-->>WS: cross_paper_analysis (Markdown)
+
+    WS->>DB: persist weekly_digest
+    Note over WS,DB: week_start (Sun), week_end (Thu),<br/>paper_count, groundbreaking_count,<br/>coverage_note, three Markdown sections
+```
+
 ### 5.5 Q&A Query
 
 ```
@@ -531,6 +654,41 @@ POST /qa { "question": "..." }
   → RAG retrieval: find relevant paper chunks within window
   → Generate grounded answer with source citations
   → Return { answer, sources }
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as API Layer
+    participant LLM_H as LLM-light (claude-haiku)
+    participant DB as Storage (pgvector)
+    participant LLM_S as LLM-heavy (claude-sonnet)
+
+    C->>API: POST /qa { "question": "..." }
+
+    API->>LLM_H: scope_check(question)
+    alt out of scope
+        LLM_H-->>API: rejected
+        API-->>C: 200 { status: "rejected", reason: "..." }
+    else in scope
+        LLM_H-->>API: in_scope
+
+        API->>DB: any digests within RAG_WINDOW_DAYS?
+        alt knowledge base empty
+            DB-->>API: empty
+            API-->>C: 200 { status: "empty", reason: "No digests available yet..." }
+        else digests exist
+            DB-->>API: has_content
+
+            API->>DB: vector_search(embed(question), filter: within RAG_WINDOW_DAYS)
+            DB-->>API: relevant_chunks[] (abstract + content chunks)
+
+            API->>LLM_S: generate_answer(question, relevant_chunks[])
+            LLM_S-->>API: answer, sources[]
+
+            API-->>C: 200 { "answer": "...", "sources": [...] }
+        end
+    end
 ```
 
 ---

@@ -1,0 +1,63 @@
+[project]
+name = "arxiv-agent"
+version = "0.1.0"
+description = "ArXiv Intelligence Agent — monitors ML research papers and synthesizes insights"
+requires-python = ">=3.12"
+dependencies = [
+    # API
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+
+    # Scheduler
+    "apscheduler==3.11.2",
+
+    # Database / ORM
+    "sqlalchemy==2.0.49",
+    "alembic==1.18.4",
+    "asyncpg==0.31.0",
+    "pgvector==0.4.2",
+
+    # arXiv & HTTP
+    "arxiv==3.0.0",
+    "httpx==0.28.1",
+    "pdfplumber==0.11.9",
+
+    # Embeddings
+    "sentence-transformers==5.4.1",
+
+    # LLM
+    "anthropic==0.97.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    "httpx==0.28.1",       # also used as AsyncClient in tests
+    "ruff==0.15.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    "ruff==0.15.12",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "RUF"]
+ignore = []

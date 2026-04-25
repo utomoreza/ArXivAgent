@@ -1,6 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
+at `specs/001-arxiv-intelligence-agent/plan.md`.
 <!-- SPECKIT END -->
 
 # ArXivAgent — Project Context
@@ -89,13 +90,28 @@ Before writing any code that uses a third-party library:
 
 **Workflow**:
 ```
-1. Read requirements.txt → find pinned version for the library
-2. Spawn context7-plugin:docs-researcher with: library, version, specific topic
-3. Write code using only APIs confirmed in the returned docs
+1. Read pyproject.toml → find pinned version for the library
+2. If the pinned version is a major-version bump from what training data likely knows
+   (e.g. arxiv 3.x, sentence-transformers 5.x, pytest 9.x, pytest-asyncio 1.x),
+   check the library's changelog/migration guide before writing any code.
+3. Spawn context7-plugin:docs-researcher with: library, version, specific topic
+4. Write code using only APIs confirmed in the returned docs
 ```
 
 This prevents version mismatch bugs where training data reflects an older or
 newer API than what is actually installed.
+
+### Known Major-Version Bumps (verify APIs before use)
+
+These packages in `pyproject.toml` are at a major version that likely differs
+from training data — treat their APIs as unknown until confirmed via docs:
+
+| Package | Pinned | Risk |
+|---------|--------|------|
+| `arxiv` | 3.0.0 | 2.x → 3.x breaking changes |
+| `sentence-transformers` | 5.4.1 | 4.x → 5.x breaking changes |
+| `pytest` | 9.0.3 | 8.x → 9.x breaking changes |
+| `pytest-asyncio` | 1.3.0 | 0.x → 1.x breaking changes |
 
 ## Technology Stack (see system_design.md for rationale)
 

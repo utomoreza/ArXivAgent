@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments (uv)
+.venv/
+venv/
+.python-version
+
+# uv
+.uv/
+uv.lock
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Ruff / linters
+.ruff_cache/
+
+# Database / Alembic
+*.db
+*.sqlite3
+
+# ML model cache (sentence-transformers downloads models here)
+.cache/
+models/
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Jupyter (in case of exploratory notebooks)
+.ipynb_checkpoints/
+*.ipynb
+
+# Distribution / packaging
+MANIFEST
+*.tar.gz
+*.whl
