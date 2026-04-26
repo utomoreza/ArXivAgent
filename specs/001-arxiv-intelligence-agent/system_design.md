@@ -351,6 +351,16 @@ methodologies, and benchmarks (4 chunks per paper total) — would eliminate tru
 and enable more precise per-query-type retrieval. Designated as a future upgrade path
 (see §8).
 
+**Known v1 limitation**: metadata fields beyond `date` (`primary_topic`,
+`secondary_topics`, `is_groundbreaking`, `authors`, `institutions`) are stored
+alongside each vector but are not used as dynamic pre-filters during retrieval.
+The retriever relies solely on vector similarity to surface relevant chunks —
+a query like "what groundbreaking papers improved MMLU?" does not pre-filter by
+`is_groundbreaking = true`. A query analysis step (Haiku extracts structured
+filter conditions from the natural language query → applied as SQL `WHERE` clauses
+before vector search) would significantly improve precision. Designated as a future
+upgrade path (see §8).
+
 **What is indexed**: daily digest paper content within `RAG_WINDOW_DAYS`.
 **What is not indexed**: weekly digests (synthesized from already-indexed dailies),
 digests older than `RAG_WINDOW_DAYS`.
@@ -739,3 +749,6 @@ Learning, Multimodal AI, Robotics, ML Theory & Optimization.
 | Multi-source ingestion | Pulling papers from sources beyond arXiv |
 | WebSocket / SSE for Q&A | Stream token-by-token responses for long answers; current `POST /qa` synchronous design is forward-compatible — only the transport layer changes |
 | Granular content chunking | Split the single content chunk into three separate chunks (contributions, methodologies, benchmarks) — 4 chunks per paper total. Eliminates 512-token truncation for complex 30–50 page papers and enables more precise per-query-type retrieval. Current two-chunk design is sufficient at v1 scale; degrade occurs only for exceptionally dense submissions. |
+| Metadata-filtered retrieval | Add a query analysis step (Haiku extracts structured filter conditions from the natural language query) that applies SQL pre-filters on `primary_topic`, `secondary_topics`, `is_groundbreaking`, `authors`, and `institutions` before vector similarity search. Improves retrieval precision for queries that name a topic, author, institution, or ask specifically for groundbreaking papers. Currently only `date` is used as a pre-filter. |
+| Multi-turn Q&A | `POST /qa` is currently stateless — each request is independent with no conversation history. Supporting follow-up questions (e.g., "can you elaborate on the second paper?") requires a session ID, a per-session `(question, answer)` history store, and passing the thread to the LLM on each turn. Current single-turn design is forward-compatible — only the request schema and a session store need to be added. |
+| Q&A answer feedback | No mechanism exists for clients to rate or correct answers. A feedback endpoint (`POST /qa/{id}/feedback`) with a thumbs-up/down or free-text field would enable answer quality tracking and future fine-tuning or prompt improvement workflows. |

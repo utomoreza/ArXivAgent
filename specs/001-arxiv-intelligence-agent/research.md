@@ -155,7 +155,17 @@ relevant and recent context first.
   groundbreaking reasoning — handles "how does X work", "what benchmark did Y
   improve" queries.
 
-**Known v1 limitation**: the content chunk is compressed by LLM extraction before
+**Known v1 limitation — metadata pre-filters**: metadata fields stored on each
+`PaperEmbedding` row (`primary_topic`, `secondary_topics`, `is_groundbreaking`,
+`authors`, `institutions`) are not used as dynamic pre-filters during retrieval.
+Only `date` is applied as a SQL filter (the RAG window). All other metadata is
+passed to the LLM as chunk context but does not narrow the vector search. A query
+analysis step — Haiku extracts structured filter conditions from the natural language
+query, applied as SQL `WHERE` clauses before cosine similarity — would meaningfully
+improve precision for topic-scoped, author-scoped, or groundbreaking-only queries.
+Designated as a future upgrade (see `system_design.md §8`).
+
+**Known v1 limitation — content chunk truncation**: the content chunk is compressed by LLM extraction before
 chunking (raw paper text never reaches the RAG layer), so the 50-page paper problem
 is partially mitigated. However, for papers with multiple major contributions or
 dense methodology descriptions, even the extracted summaries can approach or exceed
@@ -168,6 +178,16 @@ This is deferred to a future upgrade (see `system_design.md §8`).
 ---
 
 ## 8. API Response Schema
+
+**Known v1 limitations — Q&A endpoint**:
+- **Single-turn only**: `POST /qa` is stateless. Each request carries no session
+  ID and no conversation history — follow-up questions (e.g., "elaborate on the
+  second paper") have no memory of prior answers. Multi-turn support requires a
+  session store and passing the `(question, answer)` thread to the LLM on each
+  turn. Designated as a future upgrade (see `system_design.md §8`).
+- **No answer feedback**: clients cannot rate or correct answers. A feedback
+  endpoint would enable answer quality tracking and prompt improvement workflows.
+  Designated as a future upgrade (see `system_design.md §8`).
 
 **Decision**: All API responses use a consistent envelope:
 

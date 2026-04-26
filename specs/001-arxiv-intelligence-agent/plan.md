@@ -365,11 +365,18 @@ truncation order (benchmarks → methodologies → contributions).
 `tests/unit/test_retriever.py` — mock DB; assert window filter excludes
 out-of-window chunks; assert results re-ranked by date.
 
-**Known v1 limitation**: the content chunk merges contributions + methodologies +
-benchmarks into one vector with a 512-token cap. For complex papers this causes
-lossy truncation. The upgrade path (3 separate content chunks per paper) is
-documented in `system_design.md §8` — the `PaperEmbedding` table and indexer
-logic would need to be extended to support it.
+**Known v1 limitation — content chunk truncation**: the content chunk merges
+contributions + methodologies + benchmarks into one vector with a 512-token cap.
+For complex papers this causes lossy truncation. The upgrade path (3 separate
+content chunks per paper) is documented in `system_design.md §8` — the
+`PaperEmbedding` table and indexer logic would need to be extended to support it.
+
+**Known v1 limitation — metadata pre-filters**: metadata fields on `PaperEmbedding`
+(`primary_topic`, `secondary_topics`, `is_groundbreaking`, `authors`, `institutions`)
+are stored but not used as dynamic SQL pre-filters during retrieval. Only `date`
+(RAG window) is applied. The upgrade path — a Haiku query analysis step that
+extracts filter conditions and applies them as `WHERE` clauses before vector
+search — is documented in `system_design.md §8`.
 
 ---
 
@@ -461,6 +468,13 @@ assert all three Markdown sections are populated.
   empty KB informational response.
 - `tests/contract/test_openapi.py` — assert every response body validates against
   its schema in `openapi.yaml`.
+
+**Known v1 limitations**:
+- `POST /qa` is stateless — no session ID, no conversation history. Each request
+  is fully independent; follow-up questions have no memory of prior answers.
+  Multi-turn support upgrade path documented in `system_design.md §8`.
+- No feedback mechanism — clients cannot rate or correct answers. Feedback
+  endpoint upgrade path documented in `system_design.md §8`.
 
 ---
 
