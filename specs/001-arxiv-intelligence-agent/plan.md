@@ -365,6 +365,12 @@ truncation order (benchmarks → methodologies → contributions).
 `tests/unit/test_retriever.py` — mock DB; assert window filter excludes
 out-of-window chunks; assert results re-ranked by date.
 
+**Known v1 limitation**: the content chunk merges contributions + methodologies +
+benchmarks into one vector with a 512-token cap. For complex papers this causes
+lossy truncation. The upgrade path (3 separate content chunks per paper) is
+documented in `system_design.md §8` — the `PaperEmbedding` table and indexer
+logic would need to be extended to support it.
+
 ---
 
 ### Step 9 — Scheduler & inception backfill

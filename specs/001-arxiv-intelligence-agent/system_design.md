@@ -343,6 +343,14 @@ Each chunk is capped at 512 tokens. Overflow in the content chunk truncates
 least-critical fields first (benchmarks → methodologies → contributions).
 The abstract chunk never truncates — abstracts are always short enough to fit.
 
+**Known v1 limitation**: the content chunk aggregates contributions + methodologies +
+benchmarks into a single vector. For complex or long papers (30–50 pages), even
+LLM-extracted summaries can be verbose enough to hit the 512-token cap, causing
+lossy truncation. A finer-grained alternative — one chunk each for contributions,
+methodologies, and benchmarks (4 chunks per paper total) — would eliminate truncation
+and enable more precise per-query-type retrieval. Designated as a future upgrade path
+(see §8).
+
 **What is indexed**: daily digest paper content within `RAG_WINDOW_DAYS`.
 **What is not indexed**: weekly digests (synthesized from already-indexed dailies),
 digests older than `RAG_WINDOW_DAYS`.
@@ -730,3 +738,4 @@ Learning, Multimodal AI, Robotics, ML Theory & Optimization.
 | Digest retention policy | Auto-deletion of digests older than a configurable threshold |
 | Multi-source ingestion | Pulling papers from sources beyond arXiv |
 | WebSocket / SSE for Q&A | Stream token-by-token responses for long answers; current `POST /qa` synchronous design is forward-compatible — only the transport layer changes |
+| Granular content chunking | Split the single content chunk into three separate chunks (contributions, methodologies, benchmarks) — 4 chunks per paper total. Eliminates 512-token truncation for complex 30–50 page papers and enables more precise per-query-type retrieval. Current two-chunk design is sufficient at v1 scale; degrade occurs only for exceptionally dense submissions. |

@@ -155,6 +155,16 @@ relevant and recent context first.
   groundbreaking reasoning — handles "how does X work", "what benchmark did Y
   improve" queries.
 
+**Known v1 limitation**: the content chunk is compressed by LLM extraction before
+chunking (raw paper text never reaches the RAG layer), so the 50-page paper problem
+is partially mitigated. However, for papers with multiple major contributions or
+dense methodology descriptions, even the extracted summaries can approach or exceed
+the 512-token cap, resulting in lossy truncation (benchmarks dropped first, then
+methodologies). A finer-grained approach — three separate content chunks per paper
+(contributions, methodologies, benchmarks) totalling 4 chunks per paper — would
+eliminate truncation entirely and allow retrieval to target specific content types.
+This is deferred to a future upgrade (see `system_design.md §8`).
+
 ---
 
 ## 8. API Response Schema
