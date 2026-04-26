@@ -339,17 +339,27 @@ Both chunks share the same searchable metadata fields stored alongside the vecto
 | `secondary_topics` | string[] | Cross-topic queries |
 | `is_groundbreaking` | boolean | Filtering for landmark papers |
 
-Each chunk is capped at 512 tokens. Overflow in the content chunk truncates
-least-critical fields first (benchmarks → methodologies → contributions).
-The abstract chunk never truncates — abstracts are always short enough to fit.
+Token limits are **asymmetric**: abstract chunk capped at **256 tokens** (abstracts
+always fit; no truncation occurs in practice), content chunk capped at **1024 tokens**.
+When the content chunk approaches the limit, fields are dropped in priority order:
+contributions first (most general; high-level identity already encoded in the abstract
+chunk), then methodologies, benchmarks preserved last (most query-specific and
+irreplaceable).
 
-**Known v1 limitation**: the content chunk aggregates contributions + methodologies +
-benchmarks into a single vector. For complex or long papers (30–50 pages), even
-LLM-extracted summaries can be verbose enough to hit the 512-token cap, causing
-lossy truncation. A finer-grained alternative — one chunk each for contributions,
-methodologies, and benchmarks (4 chunks per paper total) — would eliminate truncation
-and enable more precise per-query-type retrieval. Designated as a future upgrade path
-(see §8).
+**No per-paper deduplication**: K=10 is a chunk count. The same paper may contribute
+both its abstract chunk and content chunk to the retrieval context.
+
+**Re-ranking**: hybrid score — `cosine_score * (1 + 0.1 * recency_factor)` where
+`recency_factor = 1 - days_ago / RAG_WINDOW_DAYS`. Cosine similarity is the primary
+signal; recency acts as a small tie-breaker multiplier.
+
+**Known v1 limitation**: even at 1024 tokens, exceptionally dense papers (30–50 pages
+with multiple major contributions and extensive benchmark tables) can approach the
+content chunk cap. Truncation priority (contributions → methodologies → benchmarks)
+minimises information loss but cannot eliminate it entirely. A finer-grained
+alternative — one chunk each for contributions, methodologies, and benchmarks
+(4 chunks per paper total) — would eliminate truncation and enable more precise
+per-query-type retrieval. Designated as a future upgrade path (see §8).
 
 **Known v1 limitation**: metadata fields beyond `date` (`primary_topic`,
 `secondary_topics`, `is_groundbreaking`, `authors`, `institutions`) are stored
@@ -748,7 +758,7 @@ Learning, Multimodal AI, Robotics, ML Theory & Optimization.
 | Digest retention policy | Auto-deletion of digests older than a configurable threshold |
 | Multi-source ingestion | Pulling papers from sources beyond arXiv |
 | WebSocket / SSE for Q&A | Stream token-by-token responses for long answers; current `POST /qa` synchronous design is forward-compatible — only the transport layer changes |
-| Granular content chunking | Split the single content chunk into three separate chunks (contributions, methodologies, benchmarks) — 4 chunks per paper total. Eliminates 512-token truncation for complex 30–50 page papers and enables more precise per-query-type retrieval. Current two-chunk design is sufficient at v1 scale; degrade occurs only for exceptionally dense submissions. |
+| Granular content chunking | Split the single content chunk into three separate chunks (contributions, methodologies, benchmarks) — 4 chunks per paper total. Eliminates truncation for exceptionally dense papers even at the 1024-token content cap, and enables more precise per-query-type retrieval. Also motivates introducing per-paper deduplication at retrieval time (currently K=10 is chunk-count, not paper-count). |
 | Metadata-filtered retrieval | Add a query analysis step (Haiku extracts structured filter conditions from the natural language query) that applies SQL pre-filters on `primary_topic`, `secondary_topics`, `is_groundbreaking`, `authors`, and `institutions` before vector similarity search. Improves retrieval precision for queries that name a topic, author, institution, or ask specifically for groundbreaking papers. Currently only `date` is used as a pre-filter. |
 | Multi-turn Q&A | `POST /qa` is currently stateless — each request is independent with no conversation history. Supporting follow-up questions (e.g., "can you elaborate on the second paper?") requires a session ID, a per-session `(question, answer)` history store, and passing the thread to the LLM on each turn. Current single-turn design is forward-compatible — only the request schema and a session store need to be added. |
 | Q&A answer feedback | No mechanism exists for clients to rate or correct answers. A feedback endpoint (`POST /qa/{id}/feedback`) with a thumbs-up/down or free-text field would enable answer quality tracking and future fine-tuning or prompt improvement workflows. |

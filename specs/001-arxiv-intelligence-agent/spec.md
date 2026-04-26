@@ -220,6 +220,14 @@ digest content. Submit out-of-scope questions and verify they are rejected.
 - Q: What should the system do when the arXiv pull fails? → A: Retry up to 3 times with exponential backoff; skip the day permanently if all retries fail (gap in digest history). Backfill-on-recovery explicitly deferred to a future upgrade.
 - Q: How long are digests retained? → A: Indefinitely — no auto-deletion. All digests remain accessible via the digest endpoint regardless of age. RAG queryability is separately bounded by `RAG_WINDOW_DAYS`; older digests exist but are not indexed for Q&A.
 
+### Session 2026-04-26
+
+- Q: What token limits should abstract and content chunks use? → A: Asymmetric — abstract chunk capped at 256 tokens, content chunk capped at 1024 tokens.
+- Q: When both abstract and content chunks from the same paper appear in top-K retrieval results, should results be deduplicated per paper? → A: No deduplication — K=10 is a chunk count; the same paper may contribute two slots to the context window.
+- Q: What re-ranking strategy should be applied after vector retrieval? → A: Hybrid — cosine similarity score as the primary signal, date recency as a small multiplier (not the primary sort key).
+- Q: What is the truncation priority order within the content chunk when it approaches the token limit? → A: Drop contributions first (most general; high-level content is already in the abstract chunk), then methodologies, preserve benchmarks last (most query-specific and irreplaceable).
+- Q: Should the primary topic label be prepended to chunk text before embedding? → A: No — topic stays in metadata only; the paper title is the only contextual header in the embedded text.
+
 ## Assumptions
 
 - arXiv's public data feed is the sole paper source; no institutional access or paid

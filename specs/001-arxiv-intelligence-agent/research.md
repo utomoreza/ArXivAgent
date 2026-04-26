@@ -140,20 +140,39 @@ parseable responses. Retry on transient API errors up to 3 times.
 
 **Decision**: Cosine similarity search over pgvector with metadata pre-filters.
 Window filter applied in SQL (`date >= now() - RAG_WINDOW_DAYS * interval '1 day'`).
-Top-K retrieval (K=10 by default, configurable). Re-rank by date recency before
-passing to the answer generation model.
+Top-K retrieval (K=10 by default, configurable). K=10 is a **chunk count** — the
+same paper may contribute both its abstract chunk and content chunk to the results;
+no per-paper deduplication is applied.
+
+Re-ranking uses a **hybrid score**: cosine similarity is the primary signal; date
+recency acts as a small multiplier. Formula: `final_score = cosine_score * (1 + 0.1 * (1 - days_ago / RAG_WINDOW_DAYS))`. This preserves relevance as the dominant signal while
+giving a slight boost to recent papers within the window.
 
 **Rationale**: SQL-level window filter avoids loading out-of-window chunks into
 the retrieval set. Cosine similarity on 384-dim vectors is fast at this scale.
-Re-ranking by recency ensures that the answer generation model sees the most
-relevant and recent context first.
+Pure recency re-ranking would bury highly relevant older papers (within the window);
+hybrid scoring keeps relevance dominant while honouring recency as a tie-breaker.
+No per-paper deduplication simplifies the retriever and avoids the complexity of
+merge/select logic — if both chunks of a paper are highly relevant, the answer LLM
+benefits from seeing both views. This is revisited when granular chunking (4 chunks
+per paper) is introduced as a future upgrade.
 
 **Two-chunk strategy per paper**:
-- **Abstract chunk**: title + authors + institutions + abstract — handles "who
-  wrote this", "what is this paper about" queries.
-- **Content chunk**: title + contributions + methodologies + benchmarks +
-  groundbreaking reasoning — handles "how does X work", "what benchmark did Y
-  improve" queries.
+- **Abstract chunk** (cap: **256 tokens**): title + authors + institutions + abstract
+  — handles "who wrote this", "what is this paper about" queries. Abstract text
+  always fits comfortably within 256 tokens; no truncation occurs in practice.
+- **Content chunk** (cap: **1024 tokens**): title + contributions + methodologies +
+  benchmarks + groundbreaking reasoning — handles "how does X work", "what benchmark
+  did Y improve" queries.
+
+**Content chunk truncation priority** (when approaching 1024-token cap): drop
+contributions first (most general; the abstract chunk already encodes high-level
+paper identity), then methodologies, preserve benchmarks last (most query-specific
+and irreplaceable — benchmark data cannot be recovered from any other chunk).
+
+**Topic prefix**: primary topic is stored as metadata on each `PaperEmbedding` row
+but is **not** prepended to the embedded text. The paper title is the only
+contextual header in the chunk text.
 
 **Known v1 limitation — metadata pre-filters**: metadata fields stored on each
 `PaperEmbedding` row (`primary_topic`, `secondary_topics`, `is_groundbreaking`,
@@ -165,15 +184,15 @@ query, applied as SQL `WHERE` clauses before cosine similarity — would meaning
 improve precision for topic-scoped, author-scoped, or groundbreaking-only queries.
 Designated as a future upgrade (see `system_design.md §8`).
 
-**Known v1 limitation — content chunk truncation**: the content chunk is compressed by LLM extraction before
-chunking (raw paper text never reaches the RAG layer), so the 50-page paper problem
-is partially mitigated. However, for papers with multiple major contributions or
-dense methodology descriptions, even the extracted summaries can approach or exceed
-the 512-token cap, resulting in lossy truncation (benchmarks dropped first, then
-methodologies). A finer-grained approach — three separate content chunks per paper
-(contributions, methodologies, benchmarks) totalling 4 chunks per paper — would
-eliminate truncation entirely and allow retrieval to target specific content types.
-This is deferred to a future upgrade (see `system_design.md §8`).
+**Known v1 limitation — content chunk truncation**: raising the content chunk cap
+to 1024 tokens significantly reduces truncation risk compared to the initial 512-token
+design. However, for exceptionally dense papers (30–50 pages with multiple major
+contributions, extensive benchmark tables), even LLM-extracted summaries can
+approach 1024 tokens. The truncation priority (contributions first, benchmarks last)
+minimises information loss. A finer-grained alternative — three separate content
+chunks per paper (contributions, methodologies, benchmarks), 4 chunks total — would
+eliminate truncation entirely and enable per-query-type retrieval precision.
+Designated as a future upgrade (see `system_design.md §8`).
 
 ---
 
