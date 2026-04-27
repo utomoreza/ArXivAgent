@@ -76,6 +76,42 @@ regular schedulers.
 
 ## Coding Guidelines
 
+### Docstrings
+
+For every function, method, or class you write: add a docstring unless the name
+and signature are fully self-explanatory to a reader who has never seen this
+codebase. When in doubt, write one.
+
+A good docstring explains **why** or **what contract** the code enforces — not
+what the code literally does line-by-line. Include:
+
+- A one-line summary (imperative mood: "Fetch papers…", "Return the digest…").
+- Parameters and return value when their purpose or type is non-obvious.
+- Any non-obvious preconditions, side-effects, or exceptions raised.
+
+Use Google-style docstrings:
+
+```python
+def fetch_papers(date: datetime.date, categories: list[str]) -> list[Paper]:
+    """Fetch arXiv papers for the given date and categories.
+
+    Retries up to 3 times with exponential backoff before raising FetchError.
+
+    Args:
+        date: Announcement date (must be a Sun–Thu, not Fri/Sat).
+        categories: arXiv category identifiers, e.g. ["cs.LG", "cs.CV"].
+
+    Returns:
+        List of Paper objects; empty list if arXiv reports zero results.
+
+    Raises:
+        FetchError: If all 3 retry attempts fail.
+    """
+```
+
+Skip the docstring only when the name, parameters, and return type together
+leave absolutely nothing ambiguous (e.g. `def is_weekend(date: datetime.date) -> bool`).
+
 ### Library Versions & Documentation
 
 Before writing any code that uses a third-party library:
