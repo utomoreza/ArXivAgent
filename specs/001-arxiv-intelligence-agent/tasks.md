@@ -25,12 +25,12 @@
 **Purpose**: Scaffold the project, install dependencies, and configure tooling.
 No user story work can begin before this phase.
 
-- [ ] T001 Initialise uv project: run `uv sync` to install all dependencies from `pyproject.toml` and generate `uv.lock`
-- [ ] T002 Create directory structure under `src/` and `tests/` exactly as shown in `plan.md` → Project Structure (all `__init__.py` files included)
-- [ ] T003 [P] Create `src/config.py` — Pydantic `Settings` class covering all env vars listed in `plan.md` → Technical Context (`INCEPTION_DATE`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RAG_WINDOW_DAYS`, `ARXIV_CATEGORIES`, `TOPIC_LIST`, `DAILY_SCHEDULER_TIME`, `WEEKLY_SCHEDULER_TIME`, `LOG_LEVEL`); see `CLAUDE.md` → Required Environment Variables for defaults
-- [ ] T004 [P] Create `.env.example` with all required vars, placeholder values, and inline comments matching `CLAUDE.md` → Required Environment Variables
-- [ ] T005 [P] Configure `ruff` in `pyproject.toml` — linting and formatting rules are already present; verify `uv run ruff check src/ tests/` passes on empty source tree
-- [ ] T006 [P] Write `tests/unit/test_config.py` **(test first)**: assert missing `INCEPTION_DATE` raises `ValidationError`; assert `RAG_WINDOW_DAYS` defaults to `90`; assert `TOPIC_LIST` parses as a list from comma-separated string
+- [X] T001 Initialise uv project: run `uv sync` to install all dependencies from `pyproject.toml` and generate `uv.lock`
+- [X] T002 Create directory structure under `src/` and `tests/` exactly as shown in `plan.md` → Project Structure (all `__init__.py` files included)
+- [X] T003 [P] Create `src/config.py` — Pydantic `Settings` class covering all env vars listed in `plan.md` → Technical Context (`INCEPTION_DATE`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RAG_WINDOW_DAYS`, `ARXIV_CATEGORIES`, `TOPIC_LIST`, `DAILY_SCHEDULER_TIME`, `WEEKLY_SCHEDULER_TIME`, `LOG_LEVEL`); see `CLAUDE.md` → Required Environment Variables for defaults
+- [X] T004 [P] Create `.env.example` with all required vars, placeholder values, and inline comments matching `CLAUDE.md` → Required Environment Variables
+- [X] T005 [P] Configure `ruff` in `pyproject.toml` — linting and formatting rules are already present; verify `uv run ruff check src/ tests/` passes on empty source tree
+- [X] T006 [P] Write `tests/unit/test_config.py` **(test first)**: assert missing `INCEPTION_DATE` raises `ValidationError`; assert `RAG_WINDOW_DAYS` defaults to `90`; assert `TOPIC_LIST` parses as a list from comma-separated string
 
 ---
 
