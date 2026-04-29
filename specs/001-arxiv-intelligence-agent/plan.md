@@ -356,6 +356,8 @@ assert `groundbreaking_count` matches papers with `is_groundbreaking=True`.
 - `rag_indexer.py`: `index_paper(paper: Paper, session: AsyncSession)` — builds
   two chunks (abstract + content), truncates content chunk at 512 tokens,
   calls embedder, persists two `PaperEmbedding` rows with all denormalized fields.
+  The `UNIQUE(arxiv_id, chunk_type)` constraint on `PaperEmbedding` enforces
+  exactly one abstract and one content chunk per paper at the DB level.
 - `retriever.py`: `retrieve(question: str, session: AsyncSession, window_days: int, k: int = 10)` — embeds question, queries pgvector with window date filter,
   re-ranks by recency, returns top-K `PaperEmbedding` rows.
 

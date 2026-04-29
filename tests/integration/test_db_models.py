@@ -165,6 +165,34 @@ async def test_daily_digest_fk_violation_on_date(session: AsyncSession):
         await session.flush()
 
 
+@pytest.mark.asyncio
+async def test_daily_digest_rejects_duplicate_date(session: AsyncSession):
+    """UNIQUE constraint on date must reject a second DailyDigest for the same date."""
+    shared_date = datetime.date(2025, 1, 20)
+    dr = DateRecord(date=shared_date, status="published", paper_count=5)
+    session.add(dr)
+    await session.flush()
+
+    session.add(DailyDigest(
+        id=uuid.uuid4(),
+        date=shared_date,
+        generated_at=datetime.datetime(2025, 1, 20, 21, 0, tzinfo=datetime.timezone.utc),
+        paper_count=5,
+        groundbreaking_count=0,
+    ))
+    await session.flush()
+
+    session.add(DailyDigest(
+        id=uuid.uuid4(),  # different PK — UNIQUE on date is the only shared value
+        date=shared_date,
+        generated_at=datetime.datetime(2025, 1, 20, 22, 0, tzinfo=datetime.timezone.utc),
+        paper_count=5,
+        groundbreaking_count=0,
+    ))
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
 # ---------------------------------------------------------------------------
 # Paper constraint: groundbreaking_reasoning must be non-null when is_groundbreaking=True
 # ---------------------------------------------------------------------------
@@ -362,6 +390,70 @@ async def test_weekly_digest_rejects_duplicate_week_start(session: AsyncSession)
         await session.flush()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("week_start,week_end", [
+    (datetime.date(2025, 3, 3), datetime.date(2025, 3, 6)),   # Monday start — rejected
+    (datetime.date(2025, 3, 4), datetime.date(2025, 3, 6)),   # Tuesday start — rejected
+    (datetime.date(2025, 3, 5), datetime.date(2025, 3, 6)),   # Wednesday start — rejected
+    (datetime.date(2025, 3, 6), datetime.date(2025, 3, 6)),   # Thursday start — rejected
+    (datetime.date(2025, 3, 7), datetime.date(2025, 3, 6)),   # Friday start — rejected
+    (datetime.date(2025, 3, 8), datetime.date(2025, 3, 6)),   # Saturday start — rejected
+])
+async def test_weekly_digest_rejects_non_sunday_week_start(
+    session: AsyncSession, week_start: datetime.date, week_end: datetime.date
+):
+    """CHECK constraint must reject week_start on any day other than Sunday."""
+    digest = WeeklyDigest(
+        id=uuid.uuid4(),
+        week_start=week_start,
+        week_end=week_end,
+        generated_at=datetime.datetime(2025, 3, 10, 1, 0, tzinfo=datetime.timezone.utc),
+        paper_count=0,
+        groundbreaking_count=0,
+        benchmark_comparisons="",
+        trend_synthesis="",
+        cross_paper_analysis="",
+        days_with_content=[],
+        no_papers_skips=[],
+        fetch_failure_skips=[],
+    )
+    session.add(digest)
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("week_start,week_end", [
+    (datetime.date(2025, 3, 16), datetime.date(2025, 3, 17)),  # Monday end — rejected
+    (datetime.date(2025, 3, 16), datetime.date(2025, 3, 18)),  # Tuesday end — rejected
+    (datetime.date(2025, 3, 16), datetime.date(2025, 3, 19)),  # Wednesday end — rejected
+    (datetime.date(2025, 3, 16), datetime.date(2025, 3, 21)),  # Friday end — rejected
+    (datetime.date(2025, 3, 16), datetime.date(2025, 3, 22)),  # Saturday end — rejected
+    (datetime.date(2025, 3, 16), datetime.date(2025, 3, 23)),  # Sunday end — rejected
+])
+async def test_weekly_digest_rejects_non_thursday_week_end(
+    session: AsyncSession, week_start: datetime.date, week_end: datetime.date
+):
+    """CHECK constraint must reject week_end on any day other than Thursday."""
+    digest = WeeklyDigest(
+        id=uuid.uuid4(),
+        week_start=week_start,
+        week_end=week_end,
+        generated_at=datetime.datetime(2025, 3, 21, 1, 0, tzinfo=datetime.timezone.utc),
+        paper_count=0,
+        groundbreaking_count=0,
+        benchmark_comparisons="",
+        trend_synthesis="",
+        cross_paper_analysis="",
+        days_with_content=[],
+        no_papers_skips=[],
+        fetch_failure_skips=[],
+    )
+    session.add(digest)
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
 # ---------------------------------------------------------------------------
 # PaperEmbedding constraints: FK on arxiv_id, chunk_type ENUM enforcement
 # ---------------------------------------------------------------------------
@@ -461,3 +553,35 @@ async def test_paper_embedding_happy_path_both_chunk_types(
         session.add(embedding)
 
     await session.flush()  # should not raise for either chunk type
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate_chunk_type", ["abstract", "content"])
+async def test_paper_embedding_rejects_duplicate_chunk_type_per_paper(
+    session: AsyncSession, seeded_paper: Paper, duplicate_chunk_type: str
+):
+    """UNIQUE(arxiv_id, chunk_type) must reject a second embedding of the same
+    chunk type for the same paper — enforcing exactly one abstract and one
+    content chunk per paper."""
+    def make_embedding() -> PaperEmbedding:
+        return PaperEmbedding(
+            id=uuid.uuid4(),  # different PK — UNIQUE on (arxiv_id, chunk_type) is the only shared value
+            arxiv_id=seeded_paper.arxiv_id,
+            chunk_type=duplicate_chunk_type,
+            content="Some text.",
+            embedding=[0.0] * 384,
+            date=seeded_paper.submitted_date,
+            primary_topic=seeded_paper.primary_topic,
+            secondary_topics=[],
+            is_groundbreaking=False,
+            title=seeded_paper.title,
+            authors=seeded_paper.authors,
+            institutions=[],
+        )
+
+    session.add(make_embedding())
+    await session.flush()
+
+    session.add(make_embedding())
+    with pytest.raises(IntegrityError):
+        await session.flush()

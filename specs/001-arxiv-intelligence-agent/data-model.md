@@ -139,7 +139,7 @@ per paper: abstract chunk + content chunk).
 |-------|------|-------------|-------|
 | `id` | `UUID` | PRIMARY KEY DEFAULT `gen_random_uuid()` | |
 | `arxiv_id` | `VARCHAR(20)` | NOT NULL | FK → `Paper.arxiv_id` |
-| `chunk_type` | `chunk_type` ENUM | NOT NULL | `abstract` or `content` |
+| `chunk_type` | `chunk_type` ENUM | NOT NULL | `abstract` or `content`; UNIQUE with `arxiv_id` |
 | `content` | `TEXT` | NOT NULL | Raw text that was embedded |
 | `embedding` | `vector(384)` | NOT NULL | BAAI/bge-small-en-v1.5 output |
 | `date` | `DATE` | NOT NULL | Paper's submitted_date (for window filtering) |
@@ -151,6 +151,9 @@ per paper: abstract chunk + content chunk).
 | `institutions` | `TEXT[]` | NOT NULL | Denormalized for metadata return |
 
 **Chunk type enum** (`chunk_type`): `abstract`, `content`
+
+**Constraints**:
+- `UNIQUE(arxiv_id, chunk_type)` — enforces exactly one abstract chunk and one content chunk per paper (the "1:2 fixed" cardinality)
 
 **Indexes**:
 - `idx_paper_embedding_date` on `date` — enables fast window filtering
