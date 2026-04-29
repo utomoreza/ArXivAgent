@@ -335,6 +335,53 @@ async def test_paper_rejects_reasoning_when_not_groundbreaking(
 
 
 # ---------------------------------------------------------------------------
+# DailyDigest constraint: paper_count must be > 0
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_daily_digest_rejects_zero_paper_count(session: AsyncSession):
+    """CHECK constraint must reject paper_count = 0 on DailyDigest."""
+    dr = DateRecord(date=datetime.date(2025, 4, 7), status="published", paper_count=1)
+    session.add(dr)
+    await session.flush()
+
+    digest = DailyDigest(
+        id=uuid.uuid4(),
+        date=datetime.date(2025, 4, 7),
+        generated_at=datetime.datetime(2025, 4, 7, 21, 0, tzinfo=datetime.timezone.utc),
+        paper_count=0,  # must be rejected
+        groundbreaking_count=0,
+    )
+    session.add(digest)
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paper_count", [1, 10, 500])
+async def test_daily_digest_allows_positive_paper_count(
+    session: AsyncSession, paper_count: int
+):
+    """CHECK constraint must accept paper_count > 0 on DailyDigest."""
+    date = datetime.date(2025, 4, 7 + paper_count)  # unique date per parametrize case
+    dr = DateRecord(date=date, status="published", paper_count=paper_count)
+    session.add(dr)
+    await session.flush()
+
+    digest = DailyDigest(
+        id=uuid.uuid4(),
+        date=date,
+        generated_at=datetime.datetime(2025, 4, 14, 21, 0, tzinfo=datetime.timezone.utc),
+        paper_count=paper_count,
+        groundbreaking_count=0,
+    )
+    session.add(digest)
+    await session.flush()  # should not raise
+    assert digest.paper_count == paper_count
+
+
+# ---------------------------------------------------------------------------
 # WeeklyDigest constraint: week_start must be UNIQUE
 # WeeklyDigest has no FK to other tables — the link to DailyDigest is a
 # date-range query at read time, so only the UNIQUE constraint is DB-enforced.
@@ -452,6 +499,59 @@ async def test_weekly_digest_rejects_non_thursday_week_end(
     session.add(digest)
     with pytest.raises(IntegrityError):
         await session.flush()
+
+
+# ---------------------------------------------------------------------------
+# WeeklyDigest constraint: paper_count must be > 0
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_weekly_digest_rejects_zero_paper_count(session: AsyncSession):
+    """CHECK constraint must reject paper_count = 0 on WeeklyDigest."""
+    digest = WeeklyDigest(
+        id=uuid.uuid4(),
+        week_start=datetime.date(2025, 4, 27),   # Sunday
+        week_end=datetime.date(2025, 5, 1),      # Thursday
+        generated_at=datetime.datetime(2025, 5, 2, 1, 0, tzinfo=datetime.timezone.utc),
+        paper_count=0,  # must be rejected
+        groundbreaking_count=0,
+        benchmark_comparisons="",
+        trend_synthesis="",
+        cross_paper_analysis="",
+        days_with_content=[],
+        no_papers_skips=[],
+        fetch_failure_skips=[],
+    )
+    session.add(digest)
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paper_count", [1, 50, 500])
+async def test_weekly_digest_allows_positive_paper_count(
+    session: AsyncSession, paper_count: int
+):
+    """CHECK constraint must accept paper_count > 0 on WeeklyDigest."""
+    week_start = datetime.date(2025, 4, 27) + datetime.timedelta(weeks=paper_count)
+    digest = WeeklyDigest(
+        id=uuid.uuid4(),
+        week_start=week_start,
+        week_end=week_start + datetime.timedelta(days=4),
+        generated_at=datetime.datetime(2025, 5, 2, 1, 0, tzinfo=datetime.timezone.utc),
+        paper_count=paper_count,
+        groundbreaking_count=0,
+        benchmark_comparisons="",
+        trend_synthesis="",
+        cross_paper_analysis="",
+        days_with_content=[],
+        no_papers_skips=[],
+        fetch_failure_skips=[],
+    )
+    session.add(digest)
+    await session.flush()  # should not raise
+    assert digest.paper_count == paper_count
 
 
 # ---------------------------------------------------------------------------

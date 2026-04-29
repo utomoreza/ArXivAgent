@@ -76,9 +76,12 @@ Stored digest document for one announcement day.
 | `id` | `UUID` | PRIMARY KEY DEFAULT `gen_random_uuid()` | |
 | `date` | `DATE` | NOT NULL UNIQUE | FK → `DateRecord.date` |
 | `generated_at` | `TIMESTAMPTZ` | NOT NULL | |
-| `paper_count` | `INTEGER` | NOT NULL | |
+| `paper_count` | `INTEGER` | NOT NULL CHECK > 0 | |
 | `groundbreaking_count` | `INTEGER` | NOT NULL | |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT `now()` | |
+
+**Constraints**:
+- `CHECK (paper_count > 0)` — a digest row only exists when papers were published; zero is never valid
 
 **Indexes**: `idx_daily_digest_date` on `date`
 
@@ -112,7 +115,7 @@ Stored digest document for one Sun–Thu announcement week.
 | `week_start` | `DATE` | NOT NULL UNIQUE | Sunday of the announcement week |
 | `week_end` | `DATE` | NOT NULL | Thursday of the same week |
 | `generated_at` | `TIMESTAMPTZ` | NOT NULL | |
-| `paper_count` | `INTEGER` | NOT NULL | |
+| `paper_count` | `INTEGER` | NOT NULL CHECK > 0 | |
 | `groundbreaking_count` | `INTEGER` | NOT NULL | |
 | `benchmark_comparisons` | `TEXT` | NOT NULL | Rendered Markdown |
 | `trend_synthesis` | `TEXT` | NOT NULL | Rendered Markdown |
@@ -125,6 +128,11 @@ Stored digest document for one Sun–Thu announcement week.
 Coverage arrays are inlined directly — no separate `CoverageNote` table needed.
 `announcement_days` (`["Sun","Mon","Tue","Wed","Thu"]`) is a constant derived at
 serialization time, not stored.
+
+**Constraints**:
+- `CHECK (paper_count > 0)` — a weekly digest row only exists when at least one paper was published during the week; zero is never valid
+- `CHECK (EXTRACT(DOW FROM week_start) = 0)` — week_start must be a Sunday
+- `CHECK (EXTRACT(DOW FROM week_end) = 4)` — week_end must be a Thursday
 
 **Indexes**: `idx_weekly_digest_week_start` on `week_start`
 

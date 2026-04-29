@@ -57,7 +57,9 @@ before LLM client, fetcher last.
   - **DateRecord CHECK**: rejects `paper_count` when `status != 'published'`; accepts `NULL` paper_count on non-published rows; accepts `paper_count >= 0` on `published` rows
   - **Paper CHECK**: rejects `is_groundbreaking=True` with `NULL` reasoning; rejects `is_groundbreaking=False` with non-null reasoning; accepts both valid combinations
   - **FK violations** (ordered before fixtures that depend on them): `Paper.submitted_date → DateRecord.date`; `TopicSection.digest_id → DailyDigest.id`; `DailyDigest.date → DateRecord.date`; `PaperEmbedding.arxiv_id → Paper.arxiv_id`
+  - **DailyDigest CHECK**: rejects `paper_count = 0`; accepts `paper_count > 0` (parametrized)
   - **DailyDigest UNIQUE**: rejects duplicate `date` with distinct PKs
+  - **WeeklyDigest CHECK**: rejects `paper_count = 0`; accepts `paper_count > 0` (parametrized)
   - **WeeklyDigest UNIQUE**: rejects duplicate `week_start` with distinct PKs
   - **WeeklyDigest CHECK** (parametrized over all 6 non-Sunday days): rejects `week_start` that is not a Sunday
   - **WeeklyDigest CHECK** (parametrized over all 5 non-Thursday days): rejects `week_end` that is not a Thursday
