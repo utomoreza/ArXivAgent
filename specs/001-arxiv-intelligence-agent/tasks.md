@@ -30,7 +30,16 @@ No user story work can begin before this phase.
 - [X] T003 [P] Create `src/config.py` — Pydantic `Settings` class covering all env vars listed in `plan.md` → Technical Context (`INCEPTION_DATE`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RAG_WINDOW_DAYS`, `ARXIV_CATEGORIES`, `TOPIC_LIST`, `DAILY_SCHEDULER_TIME`, `WEEKLY_SCHEDULER_TIME`, `LOG_LEVEL`); see `CLAUDE.md` → Required Environment Variables for defaults
 - [X] T004 [P] Create `.env.example` with all required vars, placeholder values, and inline comments matching `CLAUDE.md` → Required Environment Variables
 - [X] T005 [P] Configure `ruff` in `pyproject.toml` — linting and formatting rules are already present; verify `uv run ruff check src/ tests/` passes on empty source tree
-- [X] T006 [P] Write `tests/unit/test_config.py` **(test first)**: assert missing `INCEPTION_DATE` raises `ValidationError`; assert `RAG_WINDOW_DAYS` defaults to `90`; assert `TOPIC_LIST` parses as a list from comma-separated string
+- [X] T006 [P] Write `tests/unit/test_config.py` **(test first)**:
+  - **`INCEPTION_DATE`**: missing raises `ValidationError`; parametrized invalid formats (wrong separators, out-of-range values, non-string types) all raise `ValidationError`; valid ISO string parses to `datetime.date` object
+  - **`ANTHROPIC_API_KEY`**: missing raises `ValidationError`; empty string and non-string types rejected
+  - **`DATABASE_URL`**: missing raises `ValidationError`; valid `postgresql+asyncpg://` URLs with host/port/path variants accepted; non-asyncpg schemes (`postgresql://`, `sqlite://`), special chars in credentials, empty string, and non-string types rejected
+  - **`RAG_WINDOW_DAYS`**: defaults to `_DEFAULT_RAG_WINDOW_DAYS`; non-negative int and numeric string accepted; negative values (int and string) rejected; floats and empty string rejected
+  - **`TOPIC_LIST`**: defaults to `_DEFAULT_TOPIC_LIST`; comma-separated string parses to list; single-topic string produces one-element list; whitespace stripped per entry; each entry title-cased; empty string and non-string types rejected
+  - **`ARXIV_CATEGORIES`**: defaults to `_DEFAULT_ARXIV_CATEGORIES`; comma-separated `cs.XX` format accepted; whitespace stripped per entry; wrong case, numeric, empty, and non-string inputs rejected (parametrized)
+  - **`DAILY_SCHEDULER_TIME`**: defaults to `_DEFAULT_DAILY_SCHEDULER_TIME`; non-string and empty string rejected; invalid cron expressions (6-field, 4-field, out-of-range values) rejected
+  - **`WEEKLY_SCHEDULER_TIME`**: same validation shape as `DAILY_SCHEDULER_TIME`
+  - **`LOG_LEVEL`**: defaults to `_DEFAULT_LOG_LEVEL`; all valid `Literal` options accepted; arbitrary strings, numbers, and empty string rejected
 
 ---
 
@@ -44,7 +53,18 @@ before LLM client, fetcher last.
 
 ### Database
 
-- [ ] T007 Write `tests/integration/test_db_models.py` **(test first)**: assert `DateRecord` rejects `paper_count` when `status != 'published'`; assert `Paper.groundbreaking_reasoning` is enforced non-null when `is_groundbreaking=True`; assert FK violations raise integrity errors; see `data-model.md` → Entities and Validation rules for full constraint list
+- [X] T007 Write `tests/integration/test_db_models.py` **(test first)**:
+  - **DateRecord CHECK**: rejects `paper_count` when `status != 'published'`; accepts `NULL` paper_count on non-published rows; accepts `paper_count >= 0` on `published` rows
+  - **Paper CHECK**: rejects `is_groundbreaking=True` with `NULL` reasoning; rejects `is_groundbreaking=False` with non-null reasoning; accepts both valid combinations
+  - **FK violations** (ordered before fixtures that depend on them): `Paper.submitted_date → DateRecord.date`; `TopicSection.digest_id → DailyDigest.id`; `DailyDigest.date → DateRecord.date`; `PaperEmbedding.arxiv_id → Paper.arxiv_id`
+  - **DailyDigest UNIQUE**: rejects duplicate `date` with distinct PKs
+  - **WeeklyDigest UNIQUE**: rejects duplicate `week_start` with distinct PKs
+  - **WeeklyDigest CHECK** (parametrized over all 6 non-Sunday days): rejects `week_start` that is not a Sunday
+  - **WeeklyDigest CHECK** (parametrized over all 5 non-Thursday days): rejects `week_end` that is not a Thursday
+  - **PaperEmbedding ENUM**: rejects invalid `chunk_type` value outside `('abstract', 'content')`
+  - **PaperEmbedding UNIQUE**: rejects duplicate `(arxiv_id, chunk_type)` with distinct PKs — enforces 1:2 fixed cardinality
+  - **PaperEmbedding happy path**: both `abstract` and `content` chunk types accepted for a valid parent `Paper`
+  - See `data-model.md` → Entities and Constraints for full constraint definitions
 - [ ] T008 Create `src/db/models.py` — all ORM classes using `DeclarativeBase` and `Mapped`/`mapped_column` (SQLAlchemy 2.0 style); implement in dependency order: `DateRecord` → `DailyDigest` → `TopicSection` → `WeeklyDigest` → `Paper` → `PaperEmbedding`; column types, enums (`date_status`, `chunk_type`), FKs, and all indexes exactly as specified in `data-model.md` → Entities; use `Vector(384)` from `pgvector.sqlalchemy` for `PaperEmbedding.embedding`; see `research.md §10` → pgvector 0.4.x for correct import
 - [ ] T009 Create `src/db/session.py` — `create_async_engine`, `async_sessionmaker`, and `get_session` async dependency function; see `research.md §10` → FastAPI + SQLAlchemy async session pattern
 - [ ] T010 Create `migrations/env.py` — async Alembic runner using `async_engine_from_config` and `run_sync`; see `research.md §10` → Alembic async env.py pattern
