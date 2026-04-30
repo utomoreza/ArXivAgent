@@ -67,3 +67,5 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E501"]  # long assertion messages in tests are intentional
+"src/migrations/**/*.py" = ["E501"]  # migration files have long constraint/column lines
+"src/db/models.py" = ["E501"]  # module docstring contains ASCII art diagram
