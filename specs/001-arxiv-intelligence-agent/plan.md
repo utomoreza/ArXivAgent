@@ -107,6 +107,7 @@ src/
 │   └── jobs.py                 # APScheduler job definitions + inception backfill logic
 ├── db/
 │   ├── __init__.py
+│   ├── constants.py            # Single source of truth for all DB string literals (enum values/type names, table names, column names, constraint expressions/names, index names)
 │   ├── session.py              # SQLAlchemy async engine + session factory
 │   └── models.py               # ORM models (Paper, DateRecord, DailyDigest, WeeklyDigest, etc.)
 ├── migrations/                 # Alembic migration scripts
@@ -177,8 +178,8 @@ raise `ValidationError`, that defaults are applied correctly, and that
 
 ### Step 2 — Database models & migrations
 
-**Files**: `src/db/models.py`, `src/db/session.py`, `migrations/env.py`,
-`migrations/versions/0001_initial.py`
+**Files**: `src/db/constants.py`, `src/db/models.py`, `src/db/session.py`,
+`src/migrations/env.py`, `src/migrations/versions/0001_initial.py`
 
 **Design references**:
 - `data-model.md` → Entities section (every field, type, constraint, and index)
