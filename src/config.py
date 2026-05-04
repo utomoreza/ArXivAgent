@@ -4,7 +4,8 @@ from functools import lru_cache
 from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, DotEnvSettingsSource, EnvSettingsSource, SettingsConfigDict
+from pydantic_settings.exceptions import SettingsError
 
 _DEFAULT_TOPIC_LIST = (
     "Large Language Models,Computer Vision,Reinforcement Learning,"
@@ -70,7 +71,7 @@ def _parse_rag_window_days(v: object) -> int:
 
 
 def _title_word(word: str) -> str:
-    """Capitalize a single word, preserving short all-caps acronyms (AI, ML, CV…)."""
+    """Capitalize a single word, preserving short all-caps acronyms (AI, ML, CV...)."""
     if word.isalpha() and len(word) <= 3 and word.isupper():
         return word
     return word.capitalize()
@@ -151,6 +152,27 @@ def _parse_log_level(v: object) -> str:
     return v
 
 
+class _CommaSeparatedEnvSource(EnvSettingsSource):
+    """Env source that returns the raw string when JSON decoding fails for list
+    fields, allowing BeforeValidator to handle comma-separated values instead."""
+
+    def prepare_field_value(self, field_name, field, value, value_is_complex):
+        try:
+            return super().prepare_field_value(field_name, field, value, value_is_complex)
+        except (SettingsError, ValueError):
+            return value
+
+
+class _CommaSeparatedDotEnvSource(DotEnvSettingsSource):
+    """Dotenv source with the same CSV fallback as _CommaSeparatedEnvSource."""
+
+    def prepare_field_value(self, field_name, field, value, value_is_complex):
+        try:
+            return super().prepare_field_value(field_name, field, value, value_is_complex)
+        except (SettingsError, ValueError):
+            return value
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -181,6 +203,31 @@ class Settings(BaseSettings):
     LOG_LEVEL: Annotated[
         LogLevel, BeforeValidator(_parse_log_level)
     ] = _DEFAULT_LOG_LEVEL
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        """Replace env/dotenv sources with CSV-fallback variants.
+
+        Mirrors env_file and encoding from dotenv_settings so that _env_file=None
+        passed to Settings() in tests is correctly propagated.
+        """
+        return (
+            init_settings,
+            _CommaSeparatedEnvSource(settings_cls),
+            _CommaSeparatedDotEnvSource(
+                settings_cls,
+                env_file=dotenv_settings.env_file,
+                env_file_encoding=dotenv_settings.env_file_encoding,
+            ),
+            file_secret_settings,
+        )
 
 
 @lru_cache
