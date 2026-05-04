@@ -261,7 +261,7 @@ class Paper(Base):
         Index(constants.IDX_PAPERS_IS_GROUNDBREAKING, constants.COL_IS_GROUNDBREAKING),
         Index(
             constants.IDX_PAPERS_FTS,
-            func.to_tsvector("english", text("title || ' ' || abstract")),
+            text("to_tsvector('english', title || ' ' || abstract)"),
             postgresql_using="gin",
         ),
         Index(constants.IDX_PAPERS_AUTHORS, constants.COL_AUTHORS, postgresql_using="gin"),
