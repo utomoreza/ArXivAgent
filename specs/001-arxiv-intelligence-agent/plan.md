@@ -77,10 +77,13 @@ deep reasoning, Haiku for classification) via the Anthropic SDK.
 specs/001-arxiv-intelligence-agent/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 output
+├── system_design.md     # Phase 0 output
 ├── data-model.md        # Phase 1 output
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output
 │   └── openapi.yaml
+├── checklists/
+│   └── requirements.md
 └── tasks.md             # Phase 2 output (/speckit-tasks command)
 ```
 
@@ -88,10 +91,12 @@ specs/001-arxiv-intelligence-agent/
 
 ```text
 src/
+├── __init__.py
 ├── api/
 │   ├── __init__.py
 │   ├── app.py                  # FastAPI app factory
 │   ├── routers/
+│   │   ├── __init__.py
 │   │   ├── digests.py          # GET /digests/daily/{date}, GET /digests/weekly/{week_start_date}
 │   │   └── qa.py               # POST /qa
 │   └── schemas.py              # Pydantic request/response models
@@ -114,6 +119,7 @@ src/
 ├── migrations/                 # Alembic migration scripts
 │   ├── env.py
 │   └── versions/
+│       └── 0001_initial.py
 ├── rag/
 │   ├── __init__.py
 │   ├── embedder.py             # sentence-transformers wrapper
@@ -125,8 +131,11 @@ src/
 └── main.py                     # Entrypoint: start FastAPI + APScheduler
 
 tests/
+├── __init__.py
 ├── conftest.py                 # Fixtures: test DB, mock arXiv, mock LLM
 ├── unit/
+│   ├── __init__.py
+│   ├── test_config.py
 │   ├── test_fetcher.py
 │   ├── test_processor.py
 │   ├── test_detector.py
@@ -135,10 +144,13 @@ tests/
 │   ├── test_rag_indexer.py
 │   └── test_scheduler.py       # backfill logic, date-state classification
 ├── integration/
+│   ├── __init__.py
+│   ├── test_db_models.py       # FK and enum constraints against real DB
 │   ├── test_api_digests.py     # All 6 GET /digests/daily states, 3 GET /digests/weekly states
 │   ├── test_api_qa.py          # In-scope, out-of-scope, empty KB
 │   └── test_pipeline.py        # End-to-end happy path + failure paths
 └── contract/
+    ├── __init__.py
     └── test_openapi.py         # Response shapes match openapi.yaml
 ```
 
