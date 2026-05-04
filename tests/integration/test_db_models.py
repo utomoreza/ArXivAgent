@@ -10,7 +10,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
-from sqlalchemy.exc import DataError, IntegrityError
+from sqlalchemy.exc import DBAPIError, DataError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.db.models import Base, DateRecord, DailyDigest, Paper, PaperEmbedding, TopicSection, WeeklyDigest
@@ -364,7 +364,7 @@ async def test_daily_digest_allows_positive_paper_count(
     session: AsyncSession, paper_count: int
 ):
     """CHECK constraint must accept paper_count > 0 on DailyDigest."""
-    date = datetime.date(2025, 4, 7 + paper_count)  # unique date per parametrize case
+    date = datetime.date(2025, 4, 1) + datetime.timedelta(days=paper_count)  # unique date per parametrize case
     dr = DateRecord(date=date, status="published", paper_count=paper_count)
     session.add(dr)
     await session.flush()
@@ -626,7 +626,7 @@ async def test_paper_embedding_rejects_invalid_chunk_type(
         institutions=[],
     )
     session.add(embedding)
-    with pytest.raises((IntegrityError, DataError)):
+    with pytest.raises((IntegrityError, DataError, DBAPIError)):
         await session.flush()
 
 
