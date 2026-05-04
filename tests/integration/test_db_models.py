@@ -10,11 +10,18 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError, DataError, IntegrityError
+from sqlalchemy.exc import DataError, DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.db.models import Base, DateRecord, DailyDigest, Paper, PaperEmbedding, TopicSection, WeeklyDigest
-
+from src.db.models import (
+    Base,
+    DailyDigest,
+    DateRecord,
+    Paper,
+    PaperEmbedding,
+    TopicSection,
+    WeeklyDigest,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -156,7 +163,7 @@ async def test_daily_digest_fk_violation_on_date(session: AsyncSession):
     digest = DailyDigest(
         id=uuid.uuid4(),
         date=datetime.date(1998, 1, 1),  # no DateRecord
-        generated_at=datetime.datetime(1998, 1, 1, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(1998, 1, 1, tzinfo=datetime.UTC),
         paper_count=0,
         groundbreaking_count=0,
     )
@@ -176,7 +183,7 @@ async def test_daily_digest_rejects_duplicate_date(session: AsyncSession):
     session.add(DailyDigest(
         id=uuid.uuid4(),
         date=shared_date,
-        generated_at=datetime.datetime(2025, 1, 20, 21, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 1, 20, 21, 0, tzinfo=datetime.UTC),
         paper_count=5,
         groundbreaking_count=0,
     ))
@@ -185,7 +192,7 @@ async def test_daily_digest_rejects_duplicate_date(session: AsyncSession):
     session.add(DailyDigest(
         id=uuid.uuid4(),  # different PK — UNIQUE on date is the only shared value
         date=shared_date,
-        generated_at=datetime.datetime(2025, 1, 20, 22, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 1, 20, 22, 0, tzinfo=datetime.UTC),
         paper_count=5,
         groundbreaking_count=0,
     ))
@@ -208,7 +215,7 @@ async def date_record_and_topic_section(session: AsyncSession):
     digest = DailyDigest(
         id=uuid.uuid4(),
         date=datetime.date(2025, 2, 3),
-        generated_at=datetime.datetime(2025, 2, 3, 21, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 2, 3, 21, 0, tzinfo=datetime.UTC),
         paper_count=1,
         groundbreaking_count=0,
     )
@@ -232,7 +239,7 @@ async def test_paper_groundbreaking_reasoning_must_be_non_null_when_flagged(
     session: AsyncSession, date_record_and_topic_section
 ):
     """CHECK constraint must reject is_groundbreaking=True with NULL reasoning."""
-    dr, digest, section = date_record_and_topic_section
+    dr, _digest, section = date_record_and_topic_section
     paper = Paper(
         arxiv_id="2501.00001",
         title="A Groundbreaking Paper",
@@ -349,7 +356,7 @@ async def test_daily_digest_rejects_zero_paper_count(session: AsyncSession):
     digest = DailyDigest(
         id=uuid.uuid4(),
         date=datetime.date(2025, 4, 7),
-        generated_at=datetime.datetime(2025, 4, 7, 21, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 4, 7, 21, 0, tzinfo=datetime.UTC),
         paper_count=0,  # must be rejected
         groundbreaking_count=0,
     )
@@ -372,7 +379,7 @@ async def test_daily_digest_allows_positive_paper_count(
     digest = DailyDigest(
         id=uuid.uuid4(),
         date=date,
-        generated_at=datetime.datetime(2025, 4, 14, 21, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 4, 14, 21, 0, tzinfo=datetime.UTC),
         paper_count=paper_count,
         groundbreaking_count=0,
     )
@@ -395,7 +402,7 @@ async def test_weekly_digest_happy_path(session: AsyncSession):
         id=uuid.uuid4(),
         week_start=datetime.date(2025, 3, 2),   # Sunday
         week_end=datetime.date(2025, 3, 6),     # Thursday
-        generated_at=datetime.datetime(2025, 3, 7, 1, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 3, 7, 1, 0, tzinfo=datetime.UTC),
         paper_count=10,
         groundbreaking_count=1,
         benchmark_comparisons="## Benchmarks\n...",
@@ -418,7 +425,7 @@ async def test_weekly_digest_rejects_duplicate_week_start(session: AsyncSession)
             id=uuid.uuid4(),
             week_start=week_start,
             week_end=week_start + datetime.timedelta(days=4),
-            generated_at=datetime.datetime(2025, 3, 14, 1, 0, tzinfo=datetime.timezone.utc),
+            generated_at=datetime.datetime(2025, 3, 14, 1, 0, tzinfo=datetime.UTC),
             paper_count=5,
             groundbreaking_count=0,
             benchmark_comparisons="",
@@ -454,7 +461,7 @@ async def test_weekly_digest_rejects_non_sunday_week_start(
         id=uuid.uuid4(),
         week_start=week_start,
         week_end=week_end,
-        generated_at=datetime.datetime(2025, 3, 10, 1, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 3, 10, 1, 0, tzinfo=datetime.UTC),
         paper_count=0,
         groundbreaking_count=0,
         benchmark_comparisons="",
@@ -486,7 +493,7 @@ async def test_weekly_digest_rejects_non_thursday_week_end(
         id=uuid.uuid4(),
         week_start=week_start,
         week_end=week_end,
-        generated_at=datetime.datetime(2025, 3, 21, 1, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 3, 21, 1, 0, tzinfo=datetime.UTC),
         paper_count=0,
         groundbreaking_count=0,
         benchmark_comparisons="",
@@ -513,7 +520,7 @@ async def test_weekly_digest_rejects_zero_paper_count(session: AsyncSession):
         id=uuid.uuid4(),
         week_start=datetime.date(2025, 4, 27),   # Sunday
         week_end=datetime.date(2025, 5, 1),      # Thursday
-        generated_at=datetime.datetime(2025, 5, 2, 1, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 5, 2, 1, 0, tzinfo=datetime.UTC),
         paper_count=0,  # must be rejected
         groundbreaking_count=0,
         benchmark_comparisons="",
@@ -539,7 +546,7 @@ async def test_weekly_digest_allows_positive_paper_count(
         id=uuid.uuid4(),
         week_start=week_start,
         week_end=week_start + datetime.timedelta(days=4),
-        generated_at=datetime.datetime(2025, 5, 2, 1, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2025, 5, 2, 1, 0, tzinfo=datetime.UTC),
         paper_count=paper_count,
         groundbreaking_count=0,
         benchmark_comparisons="",

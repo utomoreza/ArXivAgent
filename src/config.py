@@ -4,7 +4,12 @@ from functools import lru_cache
 from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field
-from pydantic_settings import BaseSettings, DotEnvSettingsSource, EnvSettingsSource, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    SettingsConfigDict,
+)
 from pydantic_settings.exceptions import SettingsError
 
 _DEFAULT_TOPIC_LIST = (
@@ -158,7 +163,9 @@ class _CommaSeparatedEnvSource(EnvSettingsSource):
 
     def prepare_field_value(self, field_name, field, value, value_is_complex):
         try:
-            return super().prepare_field_value(field_name, field, value, value_is_complex)
+            return super().prepare_field_value(
+                field_name, field, value, value_is_complex
+            )
         except (SettingsError, ValueError):
             return value
 
@@ -168,7 +175,9 @@ class _CommaSeparatedDotEnvSource(DotEnvSettingsSource):
 
     def prepare_field_value(self, field_name, field, value, value_is_complex):
         try:
-            return super().prepare_field_value(field_name, field, value, value_is_complex)
+            return super().prepare_field_value(
+                field_name, field, value, value_is_complex
+            )
         except (SettingsError, ValueError):
             return value
 

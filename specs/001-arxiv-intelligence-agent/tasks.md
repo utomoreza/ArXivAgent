@@ -94,8 +94,8 @@ before LLM client, fetcher last.
 
 ### LLM Client
 
-- [ ] T012 Write `tests/unit/test_llm_client.py` **(test first)**: mock `AsyncAnthropic`; assert retry fires 3 times on `anthropic.APIError`; assert correct model string is forwarded; assert structured parse returns typed Pydantic output
-- [ ] T013 Create `src/llm/client.py` — single `AsyncAnthropic()` instance; `parse_structured(model, prompt, output_schema)` wrapping `messages.parse(output_format=schema)`; `classify(model, prompt, tool_def)` wrapping `messages.create(tools=[tool_def], tool_choice={"type":"tool",...})`; 3-attempt exponential-backoff retry on `anthropic.APIError`; structured JSON logging at DEBUG on entry and INFO/ERROR on exit with elapsed time; see `research.md §10` → Anthropic SDK 0.97.0 for both method signatures; see `research.md §6` for Sonnet vs Haiku task mapping
+- [X] T012 Write `tests/unit/test_llm_client.py` **(test first)**: mock `AsyncAnthropic`; assert retry fires 3 times on `anthropic.APIError`; assert correct model string is forwarded; assert structured parse returns typed Pydantic output
+- [X] T013 Create `src/llm/client.py` — single `AsyncAnthropic()` instance; `parse_structured(model, prompt, output_schema)` wrapping `messages.parse(output_format=schema)`; `classify(model, prompt, tool_def)` wrapping `messages.create(tools=[tool_def], tool_choice={"type":"tool",...})`; 3-attempt exponential-backoff retry on `anthropic.APIError`; structured JSON logging at DEBUG on entry and INFO/ERROR on exit with elapsed time; see `research.md §10` → Anthropic SDK 0.97.0 for both method signatures; see `research.md §6` for Sonnet vs Haiku task mapping
 
 ### arXiv Fetcher
 
