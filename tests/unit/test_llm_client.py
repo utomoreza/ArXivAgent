@@ -17,7 +17,8 @@ import pytest
 from pydantic import BaseModel
 
 import src.llm.client as llm_client
-from src.llm.client import HAIKU, SONNET, classify, parse_structured
+from src.config import _DEFAULT_LARGE_CLAUDE_LLM, _DEFAULT_SMALL_CLAUDE_LLM
+from src.llm.client import classify, parse_structured
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,21 +72,6 @@ def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Model-string constants
-# ---------------------------------------------------------------------------
-
-
-def test_sonnet_constant() -> None:
-    """SONNET names the correct model string."""
-    assert SONNET == "claude-sonnet-4-6"
-
-
-def test_haiku_constant() -> None:
-    """HAIKU names the correct model string."""
-    assert HAIKU == "claude-haiku-4-5-20251001"
-
-
-# ---------------------------------------------------------------------------
 # parse_structured — success path
 # ---------------------------------------------------------------------------
 
@@ -95,7 +81,7 @@ async def test_parse_structured_returns_typed_output(mock_client: MagicMock) -> 
     expected = _Output(value="hello")
     mock_client.messages.parse.return_value = MagicMock(parsed_output=expected)
 
-    result = await parse_structured(SONNET, "test prompt", _Output)
+    result = await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "test prompt", _Output)
 
     assert result is expected
     assert isinstance(result, _Output)
@@ -105,10 +91,10 @@ async def test_parse_structured_forwards_model_and_schema(mock_client: MagicMock
     """parse_structured passes the model and output_format to messages.parse."""
     mock_client.messages.parse.return_value = MagicMock(parsed_output=_Output(value="x"))
 
-    await parse_structured(SONNET, "prompt", _Output)
+    await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     kwargs = mock_client.messages.parse.call_args.kwargs
-    assert kwargs["model"] == SONNET
+    assert kwargs["model"] == _DEFAULT_LARGE_CLAUDE_LLM
     assert kwargs["output_format"] is _Output
 
 
@@ -117,7 +103,7 @@ async def test_parse_structured_forwards_prompt(mock_client: MagicMock) -> None:
     mock_client.messages.parse.return_value = MagicMock(parsed_output=_Output(value="x"))
     prompt = "Summarise this paper."
 
-    await parse_structured(SONNET, prompt, _Output)
+    await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, prompt, _Output)
 
     kwargs = mock_client.messages.parse.call_args.kwargs
     assert kwargs["messages"] == [{"role": "user", "content": prompt}]
@@ -133,7 +119,7 @@ async def test_parse_structured_retries_on_api_error(mock_client: MagicMock) -> 
     mock_client.messages.parse.side_effect = _api_error()
 
     with pytest.raises(anthropic.APIError):
-        await parse_structured(SONNET, "prompt", _Output)
+        await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     assert mock_client.messages.parse.call_count == 3
 
@@ -143,7 +129,7 @@ async def test_parse_structured_sleeps_between_retries(mock_client: MagicMock) -
     mock_client.messages.parse.side_effect = _api_error()
 
     with pytest.raises(anthropic.APIError):
-        await parse_structured(SONNET, "prompt", _Output)
+        await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     sleep_calls = asyncio.sleep.call_args_list  # type: ignore[attr-defined]
     # Two sleeps between 3 attempts; base=1.0 → 1.0s then 2.0s
@@ -158,7 +144,7 @@ async def test_parse_structured_succeeds_after_retry(mock_client: MagicMock) -> 
         MagicMock(parsed_output=expected),
     ]
 
-    result = await parse_structured(SONNET, "prompt", _Output)
+    result = await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     assert result is expected
     assert mock_client.messages.parse.call_count == 2
@@ -174,7 +160,7 @@ async def test_parse_structured_reraises_last_exception(mock_client: MagicMock) 
     ]
 
     with pytest.raises(anthropic.APIError) as exc_info:
-        await parse_structured(SONNET, "prompt", _Output)
+        await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     assert exc_info.value is sentinel_error
 
@@ -191,7 +177,7 @@ async def test_parse_structured_logs_entry_at_debug(
     mock_client.messages.parse.return_value = MagicMock(parsed_output=_Output(value="x"))
 
     with caplog.at_level(logging.DEBUG, logger="src.llm.client"):
-        await parse_structured(SONNET, "prompt", _Output)
+        await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     debug_msgs = [r for r in caplog.records if r.levelno == logging.DEBUG]
     assert any("parse_structured.entry" in r.message for r in debug_msgs)
@@ -204,7 +190,7 @@ async def test_parse_structured_logs_success_at_info(
     mock_client.messages.parse.return_value = MagicMock(parsed_output=_Output(value="x"))
 
     with caplog.at_level(logging.DEBUG, logger="src.llm.client"):
-        await parse_structured(SONNET, "prompt", _Output)
+        await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     info_msgs = [r for r in caplog.records if r.levelno == logging.INFO]
     assert any("parse_structured.success" in r.message for r in info_msgs)
@@ -218,7 +204,7 @@ async def test_parse_structured_logs_error_on_failure(
 
     with caplog.at_level(logging.DEBUG, logger="src.llm.client"):
         with pytest.raises(anthropic.APIError):
-            await parse_structured(SONNET, "prompt", _Output)
+            await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert any("parse_structured.error" in r.message for r in error_msgs)
@@ -236,7 +222,7 @@ async def test_classify_returns_tool_input(mock_client: MagicMock) -> None:
     mock_response.content = [MagicMock(input=tool_input)]
     mock_client.messages.create.return_value = mock_response
 
-    result = await classify(HAIKU, "prompt", _TOOL_DEF)
+    result = await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     assert result == tool_input
 
@@ -247,10 +233,10 @@ async def test_classify_forwards_model(mock_client: MagicMock) -> None:
     mock_response.content = [MagicMock(input={"topic": "CV"})]
     mock_client.messages.create.return_value = mock_response
 
-    await classify(HAIKU, "prompt", _TOOL_DEF)
+    await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     kwargs = mock_client.messages.create.call_args.kwargs
-    assert kwargs["model"] == HAIKU
+    assert kwargs["model"] == _DEFAULT_SMALL_CLAUDE_LLM
 
 
 async def test_classify_forwards_tool_def_and_choice(mock_client: MagicMock) -> None:
@@ -259,7 +245,7 @@ async def test_classify_forwards_tool_def_and_choice(mock_client: MagicMock) -> 
     mock_response.content = [MagicMock(input={"topic": "CV"})]
     mock_client.messages.create.return_value = mock_response
 
-    await classify(HAIKU, "prompt", _TOOL_DEF)
+    await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     kwargs = mock_client.messages.create.call_args.kwargs
     assert kwargs["tools"] == [_TOOL_DEF]
@@ -273,7 +259,7 @@ async def test_classify_forwards_prompt(mock_client: MagicMock) -> None:
     mock_client.messages.create.return_value = mock_response
     prompt = "Classify this paper."
 
-    await classify(HAIKU, prompt, _TOOL_DEF)
+    await classify(_DEFAULT_SMALL_CLAUDE_LLM, prompt, _TOOL_DEF)
 
     kwargs = mock_client.messages.create.call_args.kwargs
     assert kwargs["messages"] == [{"role": "user", "content": prompt}]
@@ -289,7 +275,7 @@ async def test_classify_retries_on_api_error(mock_client: MagicMock) -> None:
     mock_client.messages.create.side_effect = _api_error()
 
     with pytest.raises(anthropic.APIError):
-        await classify(HAIKU, "prompt", _TOOL_DEF)
+        await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     assert mock_client.messages.create.call_count == 3
 
@@ -299,7 +285,7 @@ async def test_classify_sleeps_between_retries(mock_client: MagicMock) -> None:
     mock_client.messages.create.side_effect = _api_error()
 
     with pytest.raises(anthropic.APIError):
-        await classify(HAIKU, "prompt", _TOOL_DEF)
+        await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     sleep_calls = asyncio.sleep.call_args_list  # type: ignore[attr-defined]
     assert sleep_calls == [call(1.0), call(2.0)]
@@ -312,7 +298,7 @@ async def test_classify_succeeds_after_retry(mock_client: MagicMock) -> None:
     good_response.content = [MagicMock(input=tool_input)]
     mock_client.messages.create.side_effect = [_api_error(), good_response]
 
-    result = await classify(HAIKU, "prompt", _TOOL_DEF)
+    result = await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     assert result == tool_input
     assert mock_client.messages.create.call_count == 2
@@ -328,7 +314,7 @@ async def test_classify_reraises_last_exception(mock_client: MagicMock) -> None:
     ]
 
     with pytest.raises(anthropic.APIError) as exc_info:
-        await classify(HAIKU, "prompt", _TOOL_DEF)
+        await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     assert exc_info.value is sentinel_error
 
@@ -347,7 +333,7 @@ async def test_classify_logs_entry_at_debug(
     mock_client.messages.create.return_value = mock_response
 
     with caplog.at_level(logging.DEBUG, logger="src.llm.client"):
-        await classify(HAIKU, "prompt", _TOOL_DEF)
+        await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     debug_msgs = [r for r in caplog.records if r.levelno == logging.DEBUG]
     assert any("classify.entry" in r.message for r in debug_msgs)
@@ -362,7 +348,7 @@ async def test_classify_logs_success_at_info(
     mock_client.messages.create.return_value = mock_response
 
     with caplog.at_level(logging.DEBUG, logger="src.llm.client"):
-        await classify(HAIKU, "prompt", _TOOL_DEF)
+        await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     info_msgs = [r for r in caplog.records if r.levelno == logging.INFO]
     assert any("classify.success" in r.message for r in info_msgs)
@@ -376,7 +362,7 @@ async def test_classify_logs_error_on_failure(
 
     with caplog.at_level(logging.DEBUG, logger="src.llm.client"):
         with pytest.raises(anthropic.APIError):
-            await classify(HAIKU, "prompt", _TOOL_DEF)
+            await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert any("classify.error" in r.message for r in error_msgs)

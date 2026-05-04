@@ -12,6 +12,9 @@ from pydantic_settings import (
 )
 from pydantic_settings.exceptions import SettingsError
 
+_DEFAULT_LARGE_CLAUDE_LLM = "claude-sonnet-4-6"
+_DEFAULT_SMALL_CLAUDE_LLM = "claude-haiku-4-5-20251001"
+
 _DEFAULT_TOPIC_LIST = (
     "Large Language Models,Computer Vision,Reinforcement Learning,"
     "Multimodal AI,Robotics,ML Theory & Optimization"
@@ -193,6 +196,9 @@ class Settings(BaseSettings):
     INCEPTION_DATE: Annotated[date, BeforeValidator(_parse_inception_date)]
     DATABASE_URL: Annotated[str, BeforeValidator(_parse_database_url)]
     ANTHROPIC_API_KEY: Annotated[str, BeforeValidator(_parse_anthropic_api_key)]
+
+    LARGE_CLAUDE_LLM: str = _DEFAULT_LARGE_CLAUDE_LLM
+    SMALL_CLAUDE_LLM: str = _DEFAULT_SMALL_CLAUDE_LLM
 
     RAG_WINDOW_DAYS: Annotated[
         int, BeforeValidator(_parse_rag_window_days), Field(ge=0)

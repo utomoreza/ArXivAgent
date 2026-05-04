@@ -22,9 +22,6 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-SONNET = "claude-sonnet-4-6"
-HAIKU = "claude-haiku-4-5-20251001"
-
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
 

@@ -398,6 +398,28 @@ def test_log_level_given_non_string(invalid_input):
         f"Expected LOG_LEVEL error for input {invalid_input!r}"
 
 
+#### LARGE_CLAUDE_LLM / SMALL_CLAUDE_LLM
+
+def test_large_claude_llm_defaults_to_sonnet(monkeypatch: MonkeyPatch):
+    settings = _env_settings(monkeypatch)
+    assert settings.LARGE_CLAUDE_LLM == config._DEFAULT_LARGE_CLAUDE_LLM
+
+
+def test_small_claude_llm_defaults_to_haiku(monkeypatch: MonkeyPatch):
+    settings = _env_settings(monkeypatch)
+    assert settings.SMALL_CLAUDE_LLM == config._DEFAULT_SMALL_CLAUDE_LLM
+
+
+def test_large_claude_llm_can_be_overridden(monkeypatch: MonkeyPatch):
+    settings = _env_settings(monkeypatch, LARGE_CLAUDE_LLM="claude-opus-4-7")
+    assert settings.LARGE_CLAUDE_LLM == "claude-opus-4-7"
+
+
+def test_small_claude_llm_can_be_overridden(monkeypatch: MonkeyPatch):
+    settings = _env_settings(monkeypatch, SMALL_CLAUDE_LLM="claude-haiku-4-5-20251001")
+    assert settings.SMALL_CLAUDE_LLM == "claude-haiku-4-5-20251001"
+
+
 #### get_settings()
 
 def test_get_settings_returns_settings_instance(monkeypatch: MonkeyPatch):
