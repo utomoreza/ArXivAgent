@@ -36,6 +36,7 @@ deep reasoning, Haiku for classification) via the Anthropic SDK.
 | `anthropic` | 0.97.0 | Claude Sonnet + Haiku API client — use `messages.parse()` for structured output |
 | `pytest` | 9.0.3 ⚠️ | Test runner |
 | `pytest-asyncio` | 1.3.0 ⚠️ | Async test support — `event_loop` fixture removed (see research.md §10) |
+| `pytest-cov` | 7.1.0 | Test coverage — branch coverage via `coverage.py`; HTML + terminal reports |
 | `ruff` | 0.15.12 | Linter + formatter |
 
 **Storage**: PostgreSQL 16 with pgvector extension (single DB for papers, digests, date records, and vector embeddings)

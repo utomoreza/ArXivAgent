@@ -74,6 +74,45 @@ regular schedulers.
 | `WEEKLY_SCHEDULER_TIME` | `0 1 * * 5` | Cron — 01:00 ET, Friday |
 | `LOG_LEVEL` | `INFO` | |
 
+## Definition of Done — Per Task
+
+**A task is not complete until all of the following are true:**
+
+1. **Tests pass** — run the test file(s) associated with the task; every test must
+   be green. Never mark a task `[X]` while any test in the relevant file is failing
+   or skipped.
+
+2. **100% coverage on the implemented file** — run:
+   ```bash
+   uv run pytest <test_file> --cov=src/<module_path> --cov-report=term-missing
+   ```
+   The `Miss` column for the implemented source file must be `0` and `BrPart` must
+   be `0`. If uncovered lines or branches remain, add tests before proceeding.
+
+3. **No ruff errors** — run `uv run ruff check src/ tests/` and fix any violations
+   before moving on.
+
+**Workflow for each task pair (test file + implementation file):**
+
+```
+1. Write the test file (TDD — all tests fail initially).
+2. Implement the source file until all tests pass.
+3. Run: uv run pytest <test_file> --cov=src/<module> --cov-report=term-missing
+4. If any line or branch is uncovered, add tests to cover it, then re-run.
+5. Confirm 0 Miss, 0 BrPart for the implemented file.
+6. Mark the task [X] in tasks.md only after steps 1–5 all pass.
+```
+
+**What counts as "related files" for coverage:**
+- The source file the task creates (e.g. `src/config.py` for T003/T006).
+- Any helper module the implementation introduces that has its own logic
+  (e.g. `src/db/constants.py` if it contains non-trivial functions).
+- Migrations, `__init__.py` files, and `src/main.py` are excluded from the
+  100% requirement (they are excluded in `[tool.coverage.run]` omit or are
+  trivially empty).
+
+---
+
 ## Coding Guidelines
 
 ### Docstrings

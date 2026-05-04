@@ -12,6 +12,24 @@
 - `research.md` — confirmed API patterns for all pinned library versions
 - `quickstart.md` — environment setup and run steps
 
+## Definition of Done
+
+**A task is not complete (`[X]`) until ALL of the following hold:**
+
+1. All tests in the associated test file(s) pass (`0 failed, 0 error`).
+2. The implemented source file has **100% line and branch coverage**
+   (`Miss = 0`, `BrPart = 0`) when measured with:
+   ```
+   uv run pytest <test_file> --cov=src/<module> --cov-report=term-missing
+   ```
+3. `uv run ruff check src/ tests/` reports no violations.
+
+Coverage exclusions (do not need 100%): `src/migrations/*`, `src/main.py`,
+all `__init__.py` files. Everything else must be fully covered before the
+task is marked complete.
+
+---
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel with other [P] tasks in the same phase
@@ -24,6 +42,7 @@
 
 **Purpose**: Scaffold the project, install dependencies, and configure tooling.
 No user story work can begin before this phase.
+**Gate**: Every task in this phase must satisfy the Definition of Done above before Phase 2 begins.
 
 - [X] T001 Initialise uv project: run `uv sync` to install all dependencies from `pyproject.toml` and generate `uv.lock`
 - [X] T002 Create directory structure under `src/` and `tests/` exactly as shown in `plan.md` → Project Structure (all `__init__.py` files included)
@@ -47,6 +66,7 @@ No user story work can begin before this phase.
 
 **Purpose**: Database layer, LLM client, and arXiv fetcher. Every user story
 depends on these. **No Phase 3+ work can begin until this phase is complete.**
+**Gate**: Every task in this phase must satisfy the Definition of Done above before Phase 3 begins.
 
 **⚠️ CRITICAL**: Complete in task order — ORM models before migrations, session
 before LLM client, fetcher last.
@@ -88,6 +108,7 @@ before LLM client, fetcher last.
 
 **Goal**: Fetch arXiv papers on schedule, extract structured content, generate
 daily and weekly digests, and serve them via the digest endpoint.
+**Gate**: Every task in this phase must satisfy the Definition of Done above before Phase 4/5 begins.
 
 **Independent Test** (from `spec.md` US1): Trigger a digest generation run;
 verify a structured digest document is produced with papers grouped by topic,
@@ -142,6 +163,7 @@ matches `contracts/openapi.yaml` → `DailyDigest` schema.
 
 **Goal**: Ensure groundbreaking papers are visually distinguished in digests with
 their reasoning displayed, and that detection accuracy is independently verifiable.
+**Gate**: Every task in this phase must satisfy the Definition of Done above before Phase 6 begins.
 
 **Independent Test** (from `spec.md` US2): Provide a controlled set of papers
 with known significance levels; verify papers meeting both criteria (benchmark
@@ -165,6 +187,7 @@ verification and digest presentation layer.*
 **Goal**: Allow researchers to ask natural language questions about digests and
 receive grounded, cited answers; reject out-of-scope questions; return an
 informational message when the knowledge base is empty.
+**Gate**: Every task in this phase must satisfy the Definition of Done above before Phase 6 begins.
 
 **Independent Test** (from `spec.md` US3): Ingest a completed digest into the
 vector store; submit three in-scope questions; verify each answer cites specific
@@ -199,6 +222,7 @@ papers; submit two out-of-scope questions; verify each is rejected with
 
 **Purpose**: Observability, performance validation, and post-backfill index
 creation. These complete the system but do not unlock any new user story.
+**Gate**: Every task in this phase must satisfy the Definition of Done above before the feature branch is merged.
 
 - [ ] T046 [P] Add structured JSON logging to all pipeline components (`fetcher.py`, `processor.py`, `detector.py`, `daily_generator.py`, `weekly_generator.py`, `rag_indexer.py`) — DEBUG on entry, INFO on success with elapsed time, ERROR on failure; every external call (arXiv API, LLM API, DB write) must emit at least one log entry; see `CLAUDE.md` constitution Principle V and `research.md §10` → logging requirement
 - [ ] T047 [P] Add structured JSON logging to `src/api/routers/digests.py` and `src/api/routers/qa.py` — log each request at DEBUG with endpoint + params; log response status at INFO with elapsed time

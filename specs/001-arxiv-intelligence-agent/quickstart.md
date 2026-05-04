@@ -92,8 +92,11 @@ INFO  [backfill] Inception backfill complete. Handing off to regular schedulers.
 
 ## 5. Run Tests
 
+Coverage is enabled by default via `pyproject.toml` (`addopts`). Every `pytest`
+run produces a terminal report and an HTML report at `htmlcov/index.html`.
+
 ```bash
-# All tests
+# All tests (coverage on by default)
 uv run pytest
 
 # Unit tests only
@@ -102,12 +105,19 @@ uv run pytest tests/unit/
 # Integration tests (requires a running test PostgreSQL instance)
 uv run pytest tests/integration/
 
-# With coverage
-uv run pytest --cov=src --cov-report=term-missing
+# Disable coverage for a quick run
+uv run pytest --no-cov
+
+# Open HTML coverage report (macOS)
+open htmlcov/index.html
 ```
 
 Integration tests use a separate test database. Set `TEST_DATABASE_URL` in your
 environment or `.env.test` file.
+
+Coverage configuration lives in `pyproject.toml` under `[tool.coverage.run]` and
+`[tool.coverage.report]`. Branch coverage is enabled; `src/migrations/` and
+`src/main.py` are excluded from measurement.
 
 ---
 

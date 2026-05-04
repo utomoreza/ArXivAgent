@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from pytest import MonkeyPatch
 
 import src.config as config
-from src.config import Settings
+from src.config import Settings, get_settings
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -228,6 +228,13 @@ def test_topic_list_empty_string_rejected(monkeypatch: MonkeyPatch):
     assert "TOPIC_LIST" in [e["loc"][0] for e in exc_info.value.errors()]
 
 
+def test_topic_list_all_commas_rejected(monkeypatch: MonkeyPatch):
+    # Non-empty string that yields no topics after splitting — hits the `not topics` branch.
+    with pytest.raises(ValidationError) as exc_info:
+        _env_settings(monkeypatch, TOPIC_LIST=",,")
+    assert "TOPIC_LIST" in [e["loc"][0] for e in exc_info.value.errors()]
+
+
 @pytest.mark.parametrize("invalid_input", [1, 0.2])
 def test_topic_list_given_non_string(invalid_input):
     with pytest.raises(ValidationError) as exc_info:
@@ -282,6 +289,13 @@ def test_arxiv_categories_given_non_string(invalid_input):
         f"Expected ARXIV_CATEGORIES error for input {invalid_input!r}"
 
 
+def test_arxiv_categories_all_commas_rejected(monkeypatch: MonkeyPatch):
+    # Non-empty string that yields no categories after splitting — hits the `not cats` branch.
+    with pytest.raises(ValidationError) as exc_info:
+        _env_settings(monkeypatch, ARXIV_CATEGORIES=",,")
+    assert "ARXIV_CATEGORIES" in [e["loc"][0] for e in exc_info.value.errors()]
+
+
 #### DAILY_SCHEDULER_TIME
 
 def test_daily_scheduler_time_default(monkeypatch: MonkeyPatch):
@@ -313,6 +327,13 @@ def test_daily_scheduler_time_given_incorrect_format(monkeypatch: MonkeyPatch, i
         _env_settings(monkeypatch, DAILY_SCHEDULER_TIME=invalid_input)
     assert "DAILY_SCHEDULER_TIME" in [e["loc"][0] for e in exc_info.value.errors()], \
         f"Expected DAILY_SCHEDULER_TIME error for input {invalid_input!r}"
+
+
+def test_daily_scheduler_time_given_non_numeric_token(monkeypatch: MonkeyPatch):
+    # Hits the `except ValueError` branch inside _parse_cron_string for non-integer tokens.
+    with pytest.raises(ValidationError) as exc_info:
+        _env_settings(monkeypatch, DAILY_SCHEDULER_TIME="abc 20 * * 0")
+    assert "DAILY_SCHEDULER_TIME" in [e["loc"][0] for e in exc_info.value.errors()]
 
 
 #### WEEKLY_SCHEDULER_TIME
@@ -375,3 +396,16 @@ def test_log_level_given_non_string(invalid_input):
         _init_settings(LOG_LEVEL=invalid_input)
     assert "LOG_LEVEL" in [e["loc"][0] for e in exc_info.value.errors()], \
         f"Expected LOG_LEVEL error for input {invalid_input!r}"
+
+
+#### get_settings()
+
+def test_get_settings_returns_settings_instance(monkeypatch: MonkeyPatch):
+    for k, v in _REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    get_settings.cache_clear()
+    try:
+        settings = get_settings()
+        assert isinstance(settings, Settings)
+    finally:
+        get_settings.cache_clear()
