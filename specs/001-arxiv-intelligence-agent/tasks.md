@@ -123,8 +123,8 @@ matches `contracts/openapi.yaml` → `DailyDigest` schema.
 
 ### Groundbreaking Detector (needed by Daily Digest Generator)
 
-- [ ] T018 Write `tests/unit/test_detector.py` **(test first)**: mock LLM; assert paper with both criteria (benchmark improvement + novel architecture) is flagged with non-empty reasoning in format "Improves {benchmark}; introduces {novel element}"; assert paper failing either criterion alone is NOT flagged; assert no partial flag state exists; see `spec.md FR-011`
-- [ ] T019 [US1] Create `src/pipeline/detector.py` — `detect_groundbreaking(paper: Paper, session) -> None`; define Pydantic schema `{is_groundbreaking: bool, benchmark_improved: str|None, novel_element: str|None}`; call Sonnet via `messages.parse()`; set `paper.is_groundbreaking` and assemble reasoning string `"Improves {benchmark}; introduces {novel_element}."` only when both fields are non-null; persist update; see `spec.md FR-004, FR-011`, `system_design.md §3.4`
+- [X] T018 Write `tests/unit/test_detector.py` **(test first)**: mock LLM; assert paper with both criteria (benchmark improvement + novel architecture) is flagged with non-empty reasoning in format "Improves {benchmark}; introduces {novel element}"; assert paper failing either criterion alone is NOT flagged; assert no partial flag state exists; see `spec.md FR-011`
+- [X] T019 [US1] Create `src/pipeline/detector.py` — `detect_groundbreaking(paper: Paper, session) -> None`; define Pydantic schema `{is_groundbreaking: bool, benchmark_improved: str|None, novel_element: str|None}`; call Sonnet via `messages.parse()`; set `paper.is_groundbreaking` and assemble reasoning string `"Improves {benchmark}; introduces {novel_element}."` only when both fields are non-null; persist update; see `spec.md FR-004, FR-011`, `system_design.md §3.4`
 
 ### Daily Digest Generator
 
