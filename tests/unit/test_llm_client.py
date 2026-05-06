@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 import src.llm.client as llm_client
 from src.config import _DEFAULT_LARGE_CLAUDE_LLM, _DEFAULT_SMALL_CLAUDE_LLM
-from src.llm.client import classify, parse_structured
+from src.llm.client import classify, parse_structured, Events
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -195,7 +195,7 @@ async def test_parse_structured_logs_entry_at_debug(
         await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     debug_msgs = [r for r in caplog.records if r.levelno == logging.DEBUG]
-    assert any("entry" in str(r.message) for r in debug_msgs)
+    assert any(Events.ENTRY.value in str(r.message) for r in debug_msgs)
 
 
 async def test_parse_structured_logs_success_at_info(
@@ -208,7 +208,7 @@ async def test_parse_structured_logs_success_at_info(
         await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     info_msgs = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert any("success" in str(r.message) for r in info_msgs)
+    assert any(Events.SUCCESS.value in str(r.message) for r in info_msgs)
 
 
 async def test_parse_structured_logs_error_on_failure(
@@ -222,7 +222,7 @@ async def test_parse_structured_logs_error_on_failure(
             await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert any("error" in str(r.message) for r in error_msgs)
+    assert any(Events.ERROR.value in str(r.message) for r in error_msgs)
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ async def test_classify_logs_entry_at_debug(
         await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     debug_msgs = [r for r in caplog.records if r.levelno == logging.DEBUG]
-    assert any("entry" in str(r.message) for r in debug_msgs)
+    assert any(Events.ENTRY.value in str(r.message) for r in debug_msgs)
 
 
 async def test_classify_logs_success_at_info(
@@ -366,7 +366,7 @@ async def test_classify_logs_success_at_info(
         await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     info_msgs = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert any("success" in str(r.message) for r in info_msgs)
+    assert any(Events.SUCCESS.value in str(r.message) for r in info_msgs)
 
 
 async def test_classify_logs_error_on_failure(
@@ -380,4 +380,4 @@ async def test_classify_logs_error_on_failure(
             await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert any("error" in str(r.message) for r in error_msgs)
+    assert any(Events.ERROR.value in str(r.message) for r in error_msgs)
