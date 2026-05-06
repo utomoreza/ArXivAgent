@@ -10,14 +10,22 @@ reflect the update automatically.
 # Enum values
 # ---------------------------------------------------------------------------
 
+DATE_STATUS_PUBLISHED = "published"
+DATE_STATUS_NO_ANNOUNCEMENT = "no_announcement"
+DATE_STATUS_NO_PAPERS_SKIP = "no_papers_skip"
+DATE_STATUS_FETCH_FAILURE_SKIP = "fetch_failure_skip"
+
 DATE_STATUS_VALUES: tuple[str, ...] = (
-    "published",
-    "no_announcement",
-    "no_papers_skip",
-    "fetch_failure_skip",
+    DATE_STATUS_PUBLISHED,
+    DATE_STATUS_NO_ANNOUNCEMENT,
+    DATE_STATUS_NO_PAPERS_SKIP,
+    DATE_STATUS_FETCH_FAILURE_SKIP,
 )
 
-CHUNK_TYPE_VALUES: tuple[str, ...] = ("abstract", "content")
+CHUNK_TYPE_ABSTRACT = "abstract"
+CHUNK_TYPE_CONTENT = "content"
+
+CHUNK_TYPE_VALUES: tuple[str, ...] = (CHUNK_TYPE_ABSTRACT, CHUNK_TYPE_CONTENT)
 
 # ---------------------------------------------------------------------------
 # Enum type names
