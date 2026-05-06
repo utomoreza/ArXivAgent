@@ -118,8 +118,8 @@ matches `contracts/openapi.yaml` → `DailyDigest` schema.
 
 ### Paper Processor
 
-- [ ] T016 Write `tests/unit/test_processor.py` **(test first)**: mock `httpx.AsyncClient` and `llm.client`; assert `primary_topic` is always one member of `settings.TOPIC_LIST`; assert `groundbreaking_reasoning` is null when `is_groundbreaking=False`; assert HTML fetch is attempted before PDF fallback; assert paper is persisted to DB
-- [ ] T017 [US1] Create `src/pipeline/processor.py` — `process_paper(result: arxiv.Result, session) -> Paper`; fetch HTML from `arxiv.org/html/{arxiv_id}` via `httpx.AsyncClient`; fall back to `pdfplumber` PDF parse if HTML returns non-200; define Pydantic extraction schema `{contributions, methodologies, benchmarks, institutions}`; call `llm.client.parse_structured(model=SONNET, ...)` for extraction; call `llm.client.classify(model=HAIKU, ...)` with topic enum tool for `primary_topic`; persist `Paper` row; see `system_design.md §3.3`, `data-model.md` → Paper entity, `research.md §6` for model tier assignments
+- [X] T016 Write `tests/unit/test_processor.py` **(test first)**: mock `httpx.AsyncClient` and `llm.client`; assert `primary_topic` is always one member of `settings.TOPIC_LIST`; assert `groundbreaking_reasoning` is null when `is_groundbreaking=False`; assert HTML fetch is attempted before PDF fallback; assert paper is persisted to DB
+- [X] T017 [US1] Create `src/pipeline/processor.py` — `process_paper(result: arxiv.Result, session) -> Paper`; fetch HTML from `arxiv.org/html/{arxiv_id}` via `httpx.AsyncClient`; fall back to `pdfplumber` PDF parse if HTML returns non-200; define Pydantic extraction schema `{contributions, methodologies, benchmarks, institutions}`; call `llm.client.parse_structured(model=SONNET, ...)` for extraction; call `llm.client.classify(model=HAIKU, ...)` with topic enum tool for `primary_topic`; persist `Paper` row; see `system_design.md §3.3`, `data-model.md` → Paper entity, `research.md §6` for model tier assignments
 
 ### Groundbreaking Detector (needed by Daily Digest Generator)
 
