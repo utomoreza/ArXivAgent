@@ -10,15 +10,14 @@ back-off and emit structured JSON log lines at DEBUG/INFO/ERROR.
 """
 
 import time
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 import anthropic
 from anthropic import AsyncAnthropic
 from pydantic import BaseModel, ConfigDict
 
 from src.utils.funcs import logger, with_retry
-
 
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
@@ -28,7 +27,7 @@ _RETRY_BASE_SECONDS = 1.0
 _client = AsyncAnthropic()
 
 
-class Events(str, Enum):
+class Events(StrEnum):
     ENTRY = "entry"
     SUCCESS = "success"
     RETRY = "retry"
@@ -39,10 +38,10 @@ class LogDatum(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     event: Events
-    model: Optional[str] = None
-    elapsed_s: Optional[float] = None
-    attempt: Optional[int] = None
-    error: Optional[str] = None
+    model: str | None = None
+    elapsed_s: float | None = None
+    attempt: int | None = None
+    error: str | None = None
 
 
 @with_retry(

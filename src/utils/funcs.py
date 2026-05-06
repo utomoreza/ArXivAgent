@@ -1,7 +1,7 @@
 import asyncio
 import functools
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from src.config import get_settings
 
@@ -22,7 +22,7 @@ class CustomFormatter(logging.Formatter):
     """Assigns different colors to log levels."""
 
     # You can customize these colors as you like
-    LEVEL_COLORS = {
+    LEVEL_COLORS: ClassVar[dict[int, str]] = {
         logging.DEBUG: Colors.CYAN,
         logging.INFO: Colors.GREEN,
         logging.WARNING: Colors.YELLOW,

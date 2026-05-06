@@ -8,7 +8,8 @@ Covers:
 
 import asyncio
 import logging
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call
 
 import anthropic
@@ -18,7 +19,7 @@ from pydantic import BaseModel
 
 import src.llm.client as llm_client
 from src.config import _DEFAULT_LARGE_CLAUDE_LLM, _DEFAULT_SMALL_CLAUDE_LLM
-from src.llm.client import classify, parse_structured, Events
+from src.llm.client import Events, classify, parse_structured
 
 # ---------------------------------------------------------------------------
 # Helpers
