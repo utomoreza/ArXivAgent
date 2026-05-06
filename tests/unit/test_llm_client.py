@@ -222,7 +222,7 @@ async def test_parse_structured_logs_error_on_failure(
             await parse_structured(_DEFAULT_LARGE_CLAUDE_LLM, "prompt", _Output)
 
     error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert any(Events.ERROR.value in str(r.message) for r in error_msgs)
+    assert any("exhausted retries" in r.message for r in error_msgs)
 
 
 # ---------------------------------------------------------------------------
@@ -380,4 +380,4 @@ async def test_classify_logs_error_on_failure(
             await classify(_DEFAULT_SMALL_CLAUDE_LLM, "prompt", _TOOL_DEF)
 
     error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert any(Events.ERROR.value in str(r.message) for r in error_msgs)
+    assert any("exhausted retries" in r.message for r in error_msgs)

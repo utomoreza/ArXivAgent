@@ -9,17 +9,15 @@ Both retry up to three times on ``anthropic.APIError`` with exponential
 back-off and emit structured JSON log lines at DEBUG/INFO/ERROR.
 """
 
-import asyncio
-import json
 import time
-from typing import Any, Optional
 from enum import Enum
+from typing import Any, Optional
 
 import anthropic
 from anthropic import AsyncAnthropic
 from pydantic import BaseModel, ConfigDict
 
-from src.utils.funcs import logger
+from src.utils.funcs import logger, with_retry
 
 
 _MAX_RETRIES = 3
@@ -47,13 +45,19 @@ class LogDatum(BaseModel):
     error: Optional[str] = None
 
 
+@with_retry(
+    max_retries=_MAX_RETRIES,
+    base_seconds=_RETRY_BASE_SECONDS,
+    exceptions=(anthropic.APIError,),
+)
 async def parse_structured[T: BaseModel](
     model: str, prompt: str, output_schema: type[T]
 ) -> T:
     """Call Claude with structured output, returning a typed Pydantic object.
 
     Wraps ``messages.parse(output_format=output_schema)`` and retries up to
-    ``_MAX_RETRIES`` times on ``anthropic.APIError`` with exponential back-off.
+    ``_MAX_RETRIES`` times on ``anthropic.APIError`` with exponential back-off
+    (delegated to the ``with_retry`` decorator).
 
     Args:
         model: Claude model string, e.g. ``SONNET`` or ``HAIKU``.
@@ -66,60 +70,37 @@ async def parse_structured[T: BaseModel](
     Raises:
         anthropic.APIError: If all retry attempts fail.
     """
-    logger.debug(LogDatum(event=Events.ENTRY.value, model=model) \
+    logger.debug(LogDatum(event=Events.ENTRY.value, model=model)
                  .model_dump(mode="json", exclude_none=True))
     start = time.monotonic()
-    last_exc: anthropic.APIError | None = None
-
-    for attempt in range(_MAX_RETRIES):
-        try:
-            response = await _client.messages.parse(
-                model=model,
-                max_tokens=2048,
-                messages=[{"role": "user", "content": prompt}],
-                output_format=output_schema,
-            )
-            result = response.parsed_output
-            elapsed = time.monotonic() - start
-            logger.info(
-                LogDatum(
-                    event=Events.SUCCESS.value,
-                    model=model,
-                    elapsed_s=round(elapsed, 3)
-                ).model_dump(mode="json", exclude_none=True)
-            )
-
-            return result  # type: ignore[return-value]
-        except anthropic.APIError as exc:
-            last_exc = exc
-            logger.warning(
-                LogDatum(
-                    event=Events.RETRY.value,
-                    attempt=attempt+1,
-                    error=str(exc),
-                ).model_dump(mode="json", exclude_none=True)
-            )
-
-            if attempt < _MAX_RETRIES - 1:
-                await asyncio.sleep(_RETRY_BASE_SECONDS * (2**attempt))
-
-    elapsed = time.monotonic() - start
-    logger.error(
+    response = await _client.messages.parse(
+        model=model,
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=output_schema,
+    )
+    result = response.parsed_output
+    logger.info(
         LogDatum(
-            event=Events.ERROR.value,
+            event=Events.SUCCESS.value,
             model=model,
-            elapsed_s=round(elapsed, 3),
+            elapsed_s=round(time.monotonic() - start, 3),
         ).model_dump(mode="json", exclude_none=True)
     )
-    raise last_exc  # type: ignore[misc]
+    return result  # type: ignore[return-value]
 
 
+@with_retry(
+    max_retries=_MAX_RETRIES,
+    base_seconds=_RETRY_BASE_SECONDS,
+    exceptions=(anthropic.APIError,),
+)
 async def classify(model: str, prompt: str, tool_def: dict[str, Any]) -> dict[str, Any]:
     """Call Claude with a pinned tool call, returning the tool input dict.
 
     Wraps ``messages.create(tools=[tool_def], tool_choice={"type":"tool",...})``
     and retries up to ``_MAX_RETRIES`` times on ``anthropic.APIError`` with
-    exponential back-off.
+    exponential back-off (delegated to the ``with_retry`` decorator).
 
     Args:
         model: Claude model string, e.g. ``SONNET`` or ``HAIKU``.
@@ -133,50 +114,22 @@ async def classify(model: str, prompt: str, tool_def: dict[str, Any]) -> dict[st
     Raises:
         anthropic.APIError: If all retry attempts fail.
     """
-    logger.debug(LogDatum(event=Events.ENTRY.value, model=model) \
+    logger.debug(LogDatum(event=Events.ENTRY.value, model=model)
                  .model_dump(mode="json", exclude_none=True))
     start = time.monotonic()
-    last_exc: anthropic.APIError | None = None
-
-    for attempt in range(_MAX_RETRIES):
-        try:
-            response = await _client.messages.create(
-                model=model,
-                max_tokens=256,
-                tools=[tool_def],
-                tool_choice={"type": "tool", "name": tool_def["name"]},
-                messages=[{"role": "user", "content": prompt}],
-            )
-            result: dict[str, Any] = response.content[0].input
-            elapsed = time.monotonic() - start
-            logger.info(
-                LogDatum(
-                    event=Events.SUCCESS.value,
-                    model=model,
-                    elapsed_s=round(elapsed, 3),
-                ).model_dump(mode="json", exclude_none=True)
-            )
-            return result
-        except anthropic.APIError as exc:
-            last_exc = exc
-            logger.warning(
-                json.dumps(
-                    {
-                        "event": "retry",
-                        "attempt": attempt + 1,
-                        "error": str(exc),
-                    }
-                )
-            )
-            if attempt < _MAX_RETRIES - 1:
-                await asyncio.sleep(_RETRY_BASE_SECONDS * (2**attempt))
-
-    elapsed = time.monotonic() - start
-    logger.error(
+    response = await _client.messages.create(
+        model=model,
+        max_tokens=256,
+        tools=[tool_def],
+        tool_choice={"type": "tool", "name": tool_def["name"]},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    result: dict[str, Any] = response.content[0].input
+    logger.info(
         LogDatum(
-            event=Events.ERROR.value,
+            event=Events.SUCCESS.value,
             model=model,
-            elapsed_s=round(elapsed, 3),
+            elapsed_s=round(time.monotonic() - start, 3),
         ).model_dump(mode="json", exclude_none=True)
     )
-    raise last_exc  # type: ignore[misc]
+    return result

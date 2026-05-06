@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.db import constants
 from src.db.models import DateRecord
-from src.utils.funcs import logger
+from src.utils.funcs import logger, with_retry
 
 _ARXIV_PAGE_SIZE = 100
 _ARXIV_DELAY_SECONDS = 3.0
@@ -87,8 +87,9 @@ class Fetcher:
     # Private methods — one responsibility each
     # ------------------------------------------------------------------
 
+    @with_retry(max_retries=_RETRY_ATTEMPTS, base_seconds=1.0)
     async def _fetch_with_retry(self) -> list[arxiv.Result]:
-        """Fetch raw results from arXiv with exponential-backoff retry.
+        """Fetch raw results from arXiv; retry logic is handled by ``with_retry``.
 
         Returns:
             List of arxiv.Result objects (may span multiple announcement dates).
@@ -96,28 +97,12 @@ class Fetcher:
         Raises:
             Exception: Re-raises the last error after all attempts are exhausted.
         """
-        last_exc: Exception | None = None
-
-        for attempt in range(_RETRY_ATTEMPTS):
-            try:
-                logger.debug("attempt %d", attempt + 1)
-                t0 = time.monotonic()
-                results = await asyncio.to_thread(
-                    lambda: list(self._client.results(self._search))
-                )
-                logger.info(
-                    "got %d results in %.2fs (attempt %d)",
-                    len(results),
-                    time.monotonic() - t0,
-                    attempt + 1,
-                )
-                return results
-            except Exception as exc:
-                last_exc = exc
-                logger.error("attempt %d failed: %s", attempt + 1, exc)
-                if attempt < _RETRY_ATTEMPTS - 1:
-                    await asyncio.sleep(2**attempt)
-        raise last_exc  # type: ignore[misc]
+        t0 = time.monotonic()
+        results = await asyncio.to_thread(
+            lambda: list(self._client.results(self._search))
+        )
+        logger.info("got %d results in %.2fs", len(results), time.monotonic() - t0)
+        return results
 
     @staticmethod
     async def _postprocess_fetched_results(
