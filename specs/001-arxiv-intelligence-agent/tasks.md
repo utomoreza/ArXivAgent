@@ -99,8 +99,8 @@ before LLM client, fetcher last.
 
 ### arXiv Fetcher
 
-- [ ] T014 Write `tests/unit/test_fetcher.py` **(test first)**: mock `arxiv.Client`; assert Fri/Sat input writes `no_announcement` `DateRecord` without calling the arXiv API; assert successful fetch writes `published` `DateRecord` and returns paper list; assert 3 consecutive API failures write `fetch_failure_skip`; assert `no_papers_skip` written when API returns empty list
-- [ ] T015 Create `src/pipeline/fetcher.py` — `fetch_papers(date, session) -> FetchResult`; instantiate `arxiv.Client(page_size=100, delay_seconds=3.0, num_retries=3)`; build `arxiv.Search` filtered by `settings.ARXIV_CATEGORIES`; iterate via `client.results(search)` (**not** `search.results()` — see `research.md §10` → arxiv 3.0.0 breaking change); guard Fri/Sat before any network call; implement 3-attempt retry with exponential backoff; write `DateRecord` for all four outcomes; see `spec.md FR-001` and `system_design.md §3.2`
+- [X] T014 Write `tests/unit/test_fetcher.py` **(test first)**: mock `arxiv.Client`; assert Fri/Sat input writes `no_announcement` `DateRecord` without calling the arXiv API; assert successful fetch writes `published` `DateRecord` and returns paper list; assert 3 consecutive API failures write `fetch_failure_skip`; assert `no_papers_skip` written when API returns empty list
+- [X] T015 Create `src/pipeline/fetcher.py` — `fetch_papers(date, session) -> FetchResult`; instantiate `arxiv.Client(page_size=100, delay_seconds=3.0, num_retries=3)`; build `arxiv.Search` filtered by `settings.ARXIV_CATEGORIES`; iterate via `client.results(search)` (**not** `search.results()` — see `research.md §10` → arxiv 3.0.0 breaking change); guard Fri/Sat before any network call; implement 3-attempt retry with exponential backoff; write `DateRecord` for all four outcomes; see `spec.md FR-001` and `system_design.md §3.2`
 
 ---
 
