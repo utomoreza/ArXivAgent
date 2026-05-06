@@ -10,17 +10,17 @@ back-off and emit structured JSON log lines at DEBUG/INFO/ERROR.
 """
 
 import asyncio
-import inspect
 import json
-import logging
 import time
-from typing import Any
+from typing import Any, Optional
+from enum import Enum
 
 import anthropic
 from anthropic import AsyncAnthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-logger = logging.getLogger(__name__)
+from src.utils.funcs import logger
+
 
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
@@ -28,6 +28,23 @@ _RETRY_BASE_SECONDS = 1.0
 # Single shared client instance — created once at import time; no API calls
 # are made until a coroutine is awaited.
 _client = AsyncAnthropic()
+
+
+class Events(str, Enum):
+    ENTRY = "entry"
+    SUCCESS = "success"
+    RETRY = "retry"
+    ERROR = "error"
+
+
+class LogDatum(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    event: Events
+    model: Optional[str] = None
+    elapsed_s: Optional[float] = None
+    attempt: Optional[int] = None
+    error: Optional[str] = None
 
 
 async def parse_structured[T: BaseModel](
@@ -49,9 +66,8 @@ async def parse_structured[T: BaseModel](
     Raises:
         anthropic.APIError: If all retry attempts fail.
     """
-    func_name = inspect.currentframe().f_code.co_name
-
-    logger.debug(json.dumps({"event": f"{func_name}.entry", "model": model}))
+    logger.debug(LogDatum(event=Events.ENTRY.value, model=model) \
+                 .model_dump(mode="json", exclude_none=True))
     start = time.monotonic()
     last_exc: anthropic.APIError | None = None
 
@@ -66,38 +82,34 @@ async def parse_structured[T: BaseModel](
             result = response.parsed_output
             elapsed = time.monotonic() - start
             logger.info(
-                json.dumps(
-                    {
-                        "event": f"{func_name}.success",
-                        "model": model,
-                        "elapsed_s": round(elapsed, 3),
-                    }
-                )
+                LogDatum(
+                    event=Events.SUCCESS.value,
+                    model=model,
+                    elapsed_s=round(elapsed, 3)
+                ).model_dump(mode="json", exclude_none=True)
             )
+
             return result  # type: ignore[return-value]
         except anthropic.APIError as exc:
             last_exc = exc
             logger.warning(
-                json.dumps(
-                    {
-                        "event": f"{func_name}.retry",
-                        "attempt": attempt + 1,
-                        "error": str(exc),
-                    }
-                )
+                LogDatum(
+                    event=Events.RETRY.value,
+                    attempt=attempt+1,
+                    error=str(exc),
+                ).model_dump(mode="json", exclude_none=True)
             )
+
             if attempt < _MAX_RETRIES - 1:
                 await asyncio.sleep(_RETRY_BASE_SECONDS * (2**attempt))
 
     elapsed = time.monotonic() - start
     logger.error(
-        json.dumps(
-            {
-                "event": f"{func_name}.error",
-                "model": model,
-                "elapsed_s": round(elapsed, 3),
-            }
-        )
+        LogDatum(
+            event=Events.ERROR.value,
+            model=model,
+            elapsed_s=round(elapsed, 3),
+        ).model_dump(mode="json", exclude_none=True)
     )
     raise last_exc  # type: ignore[misc]
 
@@ -121,9 +133,8 @@ async def classify(model: str, prompt: str, tool_def: dict[str, Any]) -> dict[st
     Raises:
         anthropic.APIError: If all retry attempts fail.
     """
-    func_name = inspect.currentframe().f_code.co_name
-
-    logger.debug(json.dumps({"event": f"{func_name}.entry", "model": model}))
+    logger.debug(LogDatum(event=Events.ENTRY.value, model=model) \
+                 .model_dump(mode="json", exclude_none=True))
     start = time.monotonic()
     last_exc: anthropic.APIError | None = None
 
@@ -139,13 +150,11 @@ async def classify(model: str, prompt: str, tool_def: dict[str, Any]) -> dict[st
             result: dict[str, Any] = response.content[0].input
             elapsed = time.monotonic() - start
             logger.info(
-                json.dumps(
-                    {
-                        "event": f"{func_name}.success",
-                        "model": model,
-                        "elapsed_s": round(elapsed, 3),
-                    }
-                )
+                LogDatum(
+                    event=Events.SUCCESS.value,
+                    model=model,
+                    elapsed_s=round(elapsed, 3),
+                ).model_dump(mode="json", exclude_none=True)
             )
             return result
         except anthropic.APIError as exc:
@@ -153,7 +162,7 @@ async def classify(model: str, prompt: str, tool_def: dict[str, Any]) -> dict[st
             logger.warning(
                 json.dumps(
                     {
-                        "event": f"{func_name}.retry",
+                        "event": "retry",
                         "attempt": attempt + 1,
                         "error": str(exc),
                     }
@@ -164,12 +173,10 @@ async def classify(model: str, prompt: str, tool_def: dict[str, Any]) -> dict[st
 
     elapsed = time.monotonic() - start
     logger.error(
-        json.dumps(
-            {
-                "event": f"{func_name}.error",
-                "model": model,
-                "elapsed_s": round(elapsed, 3),
-            }
-        )
+        LogDatum(
+            event=Events.ERROR.value,
+            model=model,
+            elapsed_s=round(elapsed, 3),
+        ).model_dump(mode="json", exclude_none=True)
     )
     raise last_exc  # type: ignore[misc]
