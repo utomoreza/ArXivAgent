@@ -64,3 +64,6 @@ logs/
 MANIFEST
 *.tar.gz
 *.whl
+
+# excluded files
+arxiv_agent_simple.py

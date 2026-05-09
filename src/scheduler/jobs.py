@@ -1,0 +1,201 @@
+"""Scheduler jobs and inception backfill for ArXivAgent.
+
+setup_scheduler: registers daily and weekly pipeline cron jobs.
+run_inception_backfill: on first startup, processes all historical dates
+from INCEPTION_DATE through yesterday before handing off to the scheduler.
+"""
+
+import datetime
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import select
+
+from src.config import get_settings
+from src.db.constants import DATE_STATUS_NO_ANNOUNCEMENT, DATE_STATUS_PUBLISHED
+from src.db.models import DateRecord
+from src.pipeline.daily_generator import DailyDigestGenerator
+from src.pipeline.detector import detect_groundbreaking
+from src.pipeline.fetcher import Fetcher
+from src.pipeline.processor import process_paper
+from src.pipeline.weekly_generator import WeeklyDigestGenerator
+from src.utils.funcs import logger
+
+_FRI = 4  # datetime.date.weekday() value for Friday
+_SAT = 5  # datetime.date.weekday() value for Saturday
+
+
+def _today() -> datetime.date:
+    """Return today's date; isolated so tests can patch it."""
+    return datetime.date.today()
+
+
+def _is_no_announcement_day(d: datetime.date) -> bool:
+    """Return True if d is Friday or Saturday (no arXiv announcement).
+
+    Args:
+        d: Calendar date to check.
+
+    Returns:
+        True for Friday and Saturday; False for all other days.
+    """
+    return d.weekday() in (_FRI, _SAT)
+
+
+def _get_week_start(d: datetime.date) -> datetime.date:
+    """Return the Sunday that opens the arXiv week containing d.
+
+    arXiv weeks run Sun-Thu. For any date d this returns the most recent
+    Sunday (equal to d when d is itself a Sunday).
+
+    Args:
+        d: Any calendar date.
+
+    Returns:
+        The Sunday on or before d that starts its arXiv announcement week.
+    """
+    # weekday(): Mon=0 … Sat=5, Sun=6 → days_since_sunday = (weekday + 1) % 7
+    days_since_sunday = (d.weekday() + 1) % 7
+    return d - datetime.timedelta(days=days_since_sunday)
+
+
+async def _run_pipeline_for_date(date: datetime.date, session) -> None:
+    """Run fetch → process → detect → daily digest for one announcement date.
+
+    Skips further work when the fetch outcome is not ``published``.
+    Skips ``detect_groundbreaking`` when ``process_paper`` returns None
+    (e.g. duplicate arXiv ID already in the DB).
+
+    Args:
+        date: The arXiv announcement date to process.
+        session: Async SQLAlchemy session for all DB operations.
+    """
+    fetcher = Fetcher()
+    result = await fetcher.fetch_papers(date, session)
+    if result.status != DATE_STATUS_PUBLISHED:
+        return
+    for arxiv_result in result.papers:
+        paper = await process_paper(arxiv_result, session)
+        if paper:
+            await detect_groundbreaking(paper, session)
+    generator = DailyDigestGenerator()
+    await generator.generate(date, session)
+
+
+async def _run_daily_job(session_factory) -> None:
+    """Scheduled daily job: process today's arXiv announcement.
+
+    Silently exits on Fri/Sat when arXiv does not publish. Otherwise
+    runs the full pipeline (fetch → process → detect → daily digest).
+
+    Args:
+        session_factory: Async session factory from the DB engine.
+    """
+    date = _today()
+    if _is_no_announcement_day(date):
+        return
+    async with session_factory() as session:
+        await _run_pipeline_for_date(date, session)
+
+
+async def _run_weekly_job(session_factory) -> None:
+    """Scheduled weekly job: generate the weekly digest for the ended week.
+
+    Only runs on Friday (the first full day after a Sun-Thu announcement
+    week). On any other weekday the function exits immediately without
+    calling the generator. Week start is computed as the most recent Sunday.
+
+    Args:
+        session_factory: Async session factory from the DB engine.
+    """
+    if _today().weekday() != _FRI:
+        return
+    week_start = _get_week_start(_today())
+    async with session_factory() as session:
+        generator = WeeklyDigestGenerator()
+        await generator.generate(week_start, session)
+
+
+async def run_inception_backfill(session_factory) -> None:
+    """Run a full historical backfill if no DateRecord rows exist.
+
+    Checks whether the ``date_records`` table has any rows. When rows exist
+    the function exits immediately — safe to call on every service startup.
+
+    When the table is empty:
+
+    1. **Daily pass** — iterates INCEPTION_DATE → yesterday.
+       - Fri/Sat: writes a ``no_announcement`` DateRecord, no pipeline.
+       - Announcement days (Sun-Thu): runs the full pipeline.
+    2. **Weekly pass** - calls WeeklyDigestGenerator for every Sun-Thu week
+       that overlaps the backfill range (complete or partial), in order.
+       A ``None`` return (no daily digests found) does not halt iteration.
+
+    Args:
+        session_factory: Async session factory from the DB engine.
+    """
+    settings = get_settings()
+    inception: datetime.date = settings.INCEPTION_DATE
+    yesterday = _today() - datetime.timedelta(days=1)
+
+    async with session_factory() as session:
+        result = await session.execute(select(DateRecord))
+        existing = result.scalars().first()
+        if existing is not None:
+            logger.info("backfill skipped: DateRecord rows already exist")
+            return
+
+    logger.info("starting inception backfill from %s to %s", inception, yesterday)
+
+    # --- Daily pass ---
+    current = inception
+    while current <= yesterday:
+        async with session_factory() as session:
+            if _is_no_announcement_day(current):
+                record = DateRecord(date=current, status=DATE_STATUS_NO_ANNOUNCEMENT)
+                session.add(record)
+                await session.commit()
+                logger.debug("wrote %s for %s", DATE_STATUS_NO_ANNOUNCEMENT, current)
+            else:
+                await _run_pipeline_for_date(current, session)
+        current += datetime.timedelta(days=1)
+
+    # --- Weekly pass ---
+    week_start = _get_week_start(inception)
+    weekly_generator = WeeklyDigestGenerator()
+    while week_start <= yesterday:
+        async with session_factory() as session:
+            await weekly_generator.generate(week_start, session)
+            logger.info("weekly digest done for week starting %s", week_start)
+        week_start += datetime.timedelta(weeks=1)
+
+    logger.info("inception backfill complete")
+
+
+def setup_scheduler(scheduler: AsyncIOScheduler, session_factory) -> None:
+    """Register daily and weekly pipeline jobs on the scheduler.
+
+    Both triggers use ``CronTrigger.from_crontab`` with the America/New_York
+    timezone so ET/EDT transitions are handled automatically.
+
+    Args:
+        scheduler: An AsyncIOScheduler instance (not yet started).
+        session_factory: Async session factory passed to each job at fire time.
+    """
+    settings = get_settings()
+    scheduler.add_job(
+        _run_daily_job,
+        trigger=CronTrigger.from_crontab(
+            settings.DAILY_SCHEDULER_TIME,
+            timezone="America/New_York",
+        ),
+        args=[session_factory],
+    )
+    scheduler.add_job(
+        _run_weekly_job,
+        trigger=CronTrigger.from_crontab(
+            settings.WEEKLY_SCHEDULER_TIME,
+            timezone="America/New_York",
+        ),
+        args=[session_factory],
+    )
