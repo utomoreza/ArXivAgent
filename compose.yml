@@ -13,6 +13,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - arxivagent_network
 
 volumes:
   db_data:
+
+networks:
+  arxivagent_network:
+    external: true

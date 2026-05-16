@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Write(src/**)",
+      "Write(tests/**)",
+      "Write(specs/**)",
+      "Write(scripts/**)",
+      "Write(logs/**)",
+      "Write(BLOCKERS.md)",
+      "Edit(src/**)",
+      "Edit(tests/**)",
+      "Edit(specs/**)",
+      "Edit(pyproject.toml)",
+      "Bash(uv run pytest*)",
+      "Bash(uv run ruff*)",
+      "Bash(uv run coverage*)",
+      "Bash(git add src/* tests/* specs/*)",
+      "Bash(git commit*)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(docker compose ps)",
+      "Bash(docker compose logs*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git reset*)",
+      "Bash(git checkout*)",
+      "Bash(git branch -D*)",
+      "Bash(rm -rf*)",
+      "Bash(curl*)",
+      "Bash(wget*)",
+      "Bash(pip install*)",
+      "Bash(npm*)",
+      "Write(.env*)",
+      "Write(src/migrations/**)",
+      "Edit(.env*)"
+    ]
+  }
+}
