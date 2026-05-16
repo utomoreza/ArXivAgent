@@ -4,8 +4,7 @@ RUN apt-get update && apt-get install -y \
     git curl nodejs npm iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 RUN npm install -g @anthropic-ai/claude-code
 
@@ -15,5 +14,11 @@ RUN useradd -m -u ${UID} -s /bin/bash claude
 USER claude
 WORKDIR /workspace
 
-RUN git config --global user.name "Claude Code" && \
-    git config --global user.email "claude@localhost"
+RUN git config --global user.email "claude@localhost" && \
+    git config --global user.name "Claude Code"
+
+# Entrypoint syncs the venv for Linux before handing off to claude.
+# This overwrites any stale macOS .venv mounted from the host.
+COPY --chown=claude scripts/entrypoint.sh /home/claude/entrypoint.sh
+RUN chmod +x /home/claude/entrypoint.sh
+ENTRYPOINT ["/home/claude/entrypoint.sh"]

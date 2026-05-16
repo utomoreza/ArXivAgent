@@ -67,3 +67,5 @@ MANIFEST
 
 # excluded files
 arxiv_agent_simple.py
+ORCHESTRATOR_STATE.md
+BLOCKERS.md
