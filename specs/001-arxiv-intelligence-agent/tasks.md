@@ -154,7 +154,7 @@ matches `contracts/openapi.yaml` → `DailyDigest` schema.
 
 ### US1 Integration & Contract Tests
 
-- [ ] T031 [US1] Write `tests/integration/test_pipeline.py` — end-to-end: mock arXiv HTTP + LLM; seed one day's papers; run `fetch_papers` → `process_paper` → `detect_groundbreaking` → `generate_daily_digest`; assert digest retrievable via `GET /digests/daily/{date}` with `status: "ok"`; assert `groundbreaking_count` correct
+- [X] T031 [US1] Write `tests/integration/test_pipeline.py` — end-to-end: mock arXiv HTTP + LLM; seed one day's papers; run `fetch_papers` → `process_paper` → `detect_groundbreaking` → `generate_daily_digest`; assert digest retrievable via `GET /digests/daily/{date}` with `status: "ok"`; assert `groundbreaking_count` correct
 - [ ] T032 [US1] Write `tests/contract/test_openapi.py` — validate every response body from all endpoints against the corresponding schema in `contracts/openapi.yaml` using `jsonschema`; test all 6 daily states, all 3 weekly states, and all 3 Q&A states; see `contracts/openapi.yaml` → components/schemas
 
 ---

@@ -198,11 +198,10 @@ class DailyDigestGenerator:
         session.add(digest)
 
         sections = await self._build_sections(digest, sorted_groups, session)
-        await session.commit()
-
-        # Attach sorted sections so callers can traverse the object without an
-        # extra round-trip; mirrors ORDER BY paper_count DESC used at query time.
+        # Attach sorted sections before commit so the relationship is populated
+        # in-memory; avoids triggering lazy loading after the session flushes.
         digest.topic_sections = sections
+        await session.commit()
 
         logger.info(
             "generated daily digest for %s: %d papers, %d groundbreaking, %d topics",
