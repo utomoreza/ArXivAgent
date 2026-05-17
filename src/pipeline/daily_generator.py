@@ -123,7 +123,15 @@ class DailyDigestGenerator:
         result: _TopicBodySchema = await parse_structured(
             _config.LARGE_CLAUDE_LLM, prompt, _TopicBodySchema
         )
-        return result.body
+        body = result.body
+
+        # Append groundbreaking callouts directly so they are always present
+        # in the body regardless of what the LLM chose to include.
+        for p in papers:
+            if p.is_groundbreaking:
+                body += f"\n\n> ⭐ **Groundbreaking** — {p.groundbreaking_reasoning}"
+
+        return body
 
     async def _build_sections(
         self,

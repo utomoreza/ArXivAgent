@@ -205,6 +205,57 @@ async def test_no_digest_when_no_papers_despite_published_record() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tests: groundbreaking callout in topic body
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_groundbreaking_callout_appended_to_body() -> None:
+    """Body for a topic with a groundbreaking paper contains the reasoning callout."""
+    gb_paper = _make_paper("Large Language Models", is_groundbreaking=True, arxiv_id="2504.00001")
+    gb_paper.groundbreaking_reasoning = "Improves GLUE; introduces sparse attention."
+    non_gb = _make_paper("Large Language Models", is_groundbreaking=False, arxiv_id="2504.00002")
+    papers = [gb_paper, non_gb]
+
+    session = _make_session()
+    session.get = AsyncMock(return_value=_make_date_record(DATE_STATUS_PUBLISHED))
+    session.execute = AsyncMock(return_value=_make_execute_result(papers))
+
+    with patch(
+        "src.pipeline.daily_generator.parse_structured",
+        new=AsyncMock(return_value=_make_body_result()),
+    ):
+        result = await DailyDigestGenerator().generate(_DATE, session)
+
+    assert result is not None
+    body = result.topic_sections[0].body
+    assert "⭐ **Groundbreaking**" in body
+    assert gb_paper.groundbreaking_reasoning in body
+
+
+@pytest.mark.asyncio
+async def test_no_callout_when_no_groundbreaking_papers() -> None:
+    """Body for a topic with no groundbreaking papers has no callout block."""
+    papers = [
+        _make_paper("Robotics", is_groundbreaking=False, arxiv_id="2504.00001"),
+        _make_paper("Robotics", is_groundbreaking=False, arxiv_id="2504.00002"),
+    ]
+    session = _make_session()
+    session.get = AsyncMock(return_value=_make_date_record(DATE_STATUS_PUBLISHED))
+    session.execute = AsyncMock(return_value=_make_execute_result(papers))
+
+    with patch(
+        "src.pipeline.daily_generator.parse_structured",
+        new=AsyncMock(return_value=_make_body_result()),
+    ):
+        result = await DailyDigestGenerator().generate(_DATE, session)
+
+    assert result is not None
+    body = result.topic_sections[0].body
+    assert "⭐ **Groundbreaking**" not in body
+
+
+# ---------------------------------------------------------------------------
 # Tests: topic ordering
 # ---------------------------------------------------------------------------
 

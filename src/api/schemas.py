@@ -89,7 +89,14 @@ class BaseDigestClass(BaseModel):
 class TopicSection(BaseDigestClass):
     name: str
     paper_count: int = Field(..., ge=1)
-    body: str = Field(..., description="Rendered Markdown for this topic's papers")
+    body: str = Field(
+        ...,
+        description=(
+            "Rendered Markdown for this topic's papers. "
+            "Groundbreaking papers are appended as blockquote callouts "
+            "prefixed with '⭐ **Groundbreaking**'."
+        ),
+    )
 
 
 class CoverageNote(BaseDigestClass):
