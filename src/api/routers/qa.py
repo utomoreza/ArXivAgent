@@ -11,6 +11,8 @@ Returns one of three envelopes:
 - EmptyKBResponse (status=empty): no in-window embeddings available
 """
 
+import time
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,6 +97,8 @@ async def query_digests(
     Returns:
         One of QAResponse, RejectedResponse, or EmptyKBResponse.
     """
+    logger.debug("POST /qa question=%s", request.question[:80])
+    t0 = time.perf_counter()
     settings = get_settings()
 
     # Step 1: scope check
@@ -107,13 +111,21 @@ async def query_digests(
         settings.SMALL_CLAUDE_LLM, scope_prompt, _SCOPE_TOOL
     )
     if not scope_result.get("in_scope"):
-        logger.info("QA rejected (out of scope): %s", request.question[:80])
+        logger.info(
+            "POST /qa status=rejected elapsed_s=%.3f question=%s",
+            time.perf_counter() - t0,
+            request.question[:80],
+        )
         return RejectedResponse(status=Status.REJECTED, reason=_REASON_REJECTED)
 
     # Step 2: retrieve relevant chunks
     chunks = await retrieve(request.question, session, settings.RAG_WINDOW_DAYS)
     if not chunks:
-        logger.info("QA empty KB for question: %s", request.question[:80])
+        logger.info(
+            "POST /qa status=empty elapsed_s=%.3f question=%s",
+            time.perf_counter() - t0,
+            request.question[:80],
+        )
         return EmptyKBResponse(status=Status.EMPTY, reason=_REASON_EMPTY)
 
     # Step 3: generate answer
@@ -138,7 +150,10 @@ async def query_digests(
     ]
 
     logger.info(
-        "QA answered: %d chunks, %d sources", len(chunks), len(sources)
+        "POST /qa status=ok elapsed_s=%.3f chunks=%d sources=%d",
+        time.perf_counter() - t0,
+        len(chunks),
+        len(sources),
     )
     return QAResponse(
         status=Status.OK,

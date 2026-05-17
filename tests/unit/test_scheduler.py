@@ -34,12 +34,27 @@ import pytest
 
 from src.db.constants import DATE_STATUS_NO_ANNOUNCEMENT
 from src.scheduler.jobs import (
+    _create_hnsw_index_if_needed,
     _run_daily_job,
     _run_weekly_job,
     _today,
     run_inception_backfill,
     setup_scheduler,
 )
+
+# ---------------------------------------------------------------------------
+# Global mock: suppress HNSW index creation in all backfill unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _mock_hnsw_hook():
+    """Prevent real _create_hnsw_index_if_needed from running in unit tests."""
+    with patch(
+        "src.scheduler.jobs._create_hnsw_index_if_needed", new=AsyncMock()
+    ):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # _today helper
@@ -629,3 +644,65 @@ class TestSetupScheduler:
         assert mock_scheduler.add_job.call_count == 2
         for c in mock_cron.from_crontab.call_args_list:
             assert c.kwargs.get("timezone") == "America/New_York"
+
+
+# ---------------------------------------------------------------------------
+# _create_hnsw_index_if_needed (T049)
+# ---------------------------------------------------------------------------
+
+
+class TestCreateHnswIndex:
+    """HNSW index is created when table has rows; skipped when empty."""
+
+    async def test_index_created_when_table_has_rows(self):
+        """CREATE INDEX is executed when paper_embeddings has at least one row."""
+        session = AsyncMock()
+        session.scalar = AsyncMock(return_value=5)
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=session)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        factory = MagicMock(return_value=cm)
+
+        await _create_hnsw_index_if_needed(factory)
+
+        session.execute.assert_awaited_once()
+        session.commit.assert_awaited_once()
+        sql_arg = str(session.execute.call_args.args[0])
+        assert "hnsw" in sql_arg.lower()
+
+    async def test_index_skipped_when_table_is_empty(self):
+        """CREATE INDEX is NOT executed when paper_embeddings has zero rows."""
+        session = AsyncMock()
+        session.scalar = AsyncMock(return_value=0)
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=session)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        factory = MagicMock(return_value=cm)
+
+        await _create_hnsw_index_if_needed(factory)
+
+        session.execute.assert_not_awaited()
+        session.commit.assert_not_awaited()
+
+    async def test_index_skipped_when_scalar_returns_none(self):
+        """CREATE INDEX is NOT executed when scalar() returns None (empty table)."""
+        session = AsyncMock()
+        session.scalar = AsyncMock(return_value=None)
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=session)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        factory = MagicMock(return_value=cm)
+
+        await _create_hnsw_index_if_needed(factory)
+
+        session.execute.assert_not_awaited()
+        session.commit.assert_not_awaited()

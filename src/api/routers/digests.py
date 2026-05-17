@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
@@ -40,6 +41,8 @@ router = APIRouter(
 
 @router.get("/digests/daily/{date}")
 async def get_digest_daily(date: str, session: AsyncSession = Depends(get_session)):
+    logger.debug("GET /digests/daily/%s", date)
+    t0 = time.perf_counter()
     requested_date = datetime.fromisoformat(date)
     if requested_date > datetime.today():
         return DailyDigestResponse(
@@ -88,22 +91,34 @@ async def get_digest_daily(date: str, session: AsyncSession = Depends(get_sessio
                     " — data may still be processing."
                 ),
             )
-        return DailyDigestResponse(
+        response = DailyDigestResponse(
             status=Status.OK,
             data=DailyDigestData.model_validate(daily_digest_result),
         )
+        logger.info(
+            "GET /digests/daily/%s status=%s elapsed_s=%.3f",
+            date, response.status, time.perf_counter() - t0,
+        )
+        return response
 
     else:
-        return DailyDigestResponse(
+        response = DailyDigestResponse(
             status=MapDateStatusToResponseStatus.get(existing.status),
             reason=MAP_STATUS_TO_REASON.get(existing.status),
         )
+        logger.info(
+            "GET /digests/daily/%s status=%s elapsed_s=%.3f",
+            date, response.status, time.perf_counter() - t0,
+        )
+        return response
 
 
 @router.get("/digests/weekly/{week_start_date}")
 async def get_digest_weekly(
     week_start_date: str, session: AsyncSession = Depends(get_session)
 ):
+    logger.debug("GET /digests/weekly/%s", week_start_date)
+    t0 = time.perf_counter()
     requested_week_start_date = datetime.fromisoformat(week_start_date)
     if requested_week_start_date.weekday() != _SUNDAY:
         return JSONResponse(
@@ -140,7 +155,12 @@ async def get_digest_weekly(
             ),
         )
 
-    return WeeklyDigestResponse(
+    response = WeeklyDigestResponse(
         status=Status.OK,
         data=WeeklyDigestData.model_validate(existing),
     )
+    logger.info(
+        "GET /digests/weekly/%s status=%s elapsed_s=%.3f",
+        week_start_date, response.status, time.perf_counter() - t0,
+    )
+    return response

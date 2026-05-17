@@ -157,24 +157,42 @@ class Fetcher:
             FetchResult whose ``status`` reflects the outcome and whose
             ``papers`` list is non-empty only for ``published`` dates.
         """
-        logger.debug("start for %s", date)
+        logger.debug("fetch_papers entry date=%s", date)
+        t0 = time.perf_counter()
 
         # Fri/Sat guard — arXiv never announces on these days
         if date.weekday() in (4, 5):  # 4=Friday, 5=Saturday
             record = DateRecord(date=date, status=constants.DATE_STATUS_NO_ANNOUNCEMENT)
             session.add(record)
             await session.commit()
-            logger.info("no_announcement for %s (Fri/Sat)", date)
+            logger.info(
+                "fetch_papers done date=%s status=no_announcement elapsed_s=%.3f",
+                date,
+                time.perf_counter() - t0,
+            )
             return FetchResult(status=constants.DATE_STATUS_NO_ANNOUNCEMENT)
 
         # Fetch with retry
         try:
             raw_results = await self._fetch_with_retry()
-            return await Fetcher._postprocess_fetched_results(
+            result = await Fetcher._postprocess_fetched_results(
                 raw_results, date, session
             )
+            logger.info(
+                "fetch_papers done date=%s status=%s papers=%d elapsed_s=%.3f",
+                date,
+                result.status,
+                len(result.papers),
+                time.perf_counter() - t0,
+            )
+            return result
         except Exception as exc:
-            logger.error("all retries failed for %s: %s", date, exc)
+            logger.error(
+                "fetch_papers failed date=%s elapsed_s=%.3f error=%s",
+                date,
+                time.perf_counter() - t0,
+                exc,
+            )
             record = DateRecord(
                 date=date, status=constants.DATE_STATUS_FETCH_FAILURE_SKIP
             )

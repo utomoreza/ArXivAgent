@@ -13,6 +13,8 @@ Failing either criterion leaves ``is_groundbreaking=False`` and
 ``groundbreaking_reasoning=None``. There is no partial flag state.
 """
 
+import time
+
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +50,8 @@ async def detect_groundbreaking(paper: Paper, session: AsyncSession) -> None:
         paper: The persisted Paper ORM instance to evaluate and update.
         session: Async SQLAlchemy session used to commit the updated paper.
     """
+    logger.debug("detect_groundbreaking entry arxiv_id=%s", paper.arxiv_id)
+    t0 = time.perf_counter()
     prompt = (
         f"Title: {paper.title}\n"
         f"Abstract: {paper.abstract}\n"
@@ -91,13 +95,20 @@ async def detect_groundbreaking(paper: Paper, session: AsyncSession) -> None:
             f"Improves {result.benchmark_improved}; introduces {result.novel_element}."
         )
         logger.info(
-            "paper %s flagged groundbreaking: %s",
+            "detect_groundbreaking done arxiv_id=%s groundbreaking=True"
+            " elapsed_s=%.3f reasoning=%s",
             paper.arxiv_id,
+            time.perf_counter() - t0,
             paper.groundbreaking_reasoning,
         )
     else:
         paper.is_groundbreaking = False
         paper.groundbreaking_reasoning = None
-        logger.debug("paper %s not groundbreaking", paper.arxiv_id)
+        logger.info(
+            "detect_groundbreaking done arxiv_id=%s groundbreaking=False"
+            " elapsed_s=%.3f",
+            paper.arxiv_id,
+            time.perf_counter() - t0,
+        )
 
     await session.commit()

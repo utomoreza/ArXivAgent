@@ -7,6 +7,7 @@ from INCEPTION_DATE through yesterday before handing off to the scheduler.
 
 import datetime
 
+import sqlalchemy as sa
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
@@ -170,6 +171,37 @@ async def run_inception_backfill(session_factory) -> None:
         week_start += datetime.timedelta(weeks=1)
 
     logger.info("inception backfill complete")
+    await _create_hnsw_index_if_needed(session_factory)
+
+
+async def _create_hnsw_index_if_needed(session_factory) -> None:
+    """Create the HNSW vector index on paper_embeddings after backfill.
+
+    Only runs when the table has at least one row and the index does not
+    already exist.  Uses CREATE INDEX IF NOT EXISTS so concurrent startup
+    races are safe.
+
+    Args:
+        session_factory: Async session factory from the DB engine.
+    """
+    _hnsw_sql = (
+        "CREATE INDEX IF NOT EXISTS ix_paper_embeddings_embedding_hnsw "
+        "ON paper_embeddings "
+        "USING hnsw (embedding vector_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
+    async with session_factory() as session:
+        row_count = await session.scalar(
+            sa.text("SELECT COUNT(*) FROM paper_embeddings")
+        )
+        if row_count and row_count > 0:
+            await session.execute(sa.text(_hnsw_sql))
+            await session.commit()
+            logger.info("HNSW index created on paper_embeddings.embedding")
+        else:
+            logger.info(
+                "HNSW index skipped: paper_embeddings is empty after backfill"
+            )
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler, session_factory) -> None:

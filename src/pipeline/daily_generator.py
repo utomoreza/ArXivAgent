@@ -8,6 +8,7 @@ persisted as ``TopicSection`` rows and returned sorted by ``paper_count DESC``.
 """
 
 import datetime
+import time
 import uuid
 from collections import defaultdict
 
@@ -185,6 +186,9 @@ class DailyDigestGenerator:
             The persisted DailyDigest with topic_sections sorted by
             paper_count DESC, or None if the date is not published.
         """
+        logger.debug("generate entry date=%s", date)
+        t0 = time.perf_counter()
+
         if not await self._check_date_record(date, session):
             return None
 
@@ -221,10 +225,12 @@ class DailyDigestGenerator:
                 await index_paper(paper, session)
 
         logger.info(
-            "generated daily digest for %s: %d papers, %d groundbreaking, %d topics",
+            "generate done date=%s papers=%d groundbreaking=%d"
+            " topics=%d elapsed_s=%.3f",
             date,
             len(papers),
             groundbreaking_count,
             len(sections),
+            time.perf_counter() - t0,
         )
         return digest

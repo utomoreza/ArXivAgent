@@ -7,6 +7,7 @@ statuses for the same window and stored inline on WeeklyDigest.
 """
 
 import datetime
+import time
 import uuid
 from datetime import timedelta
 from enum import StrEnum
@@ -206,6 +207,8 @@ class WeeklyDigestGenerator:
         Raises:
             ValueError: If week_start is not a Sunday.
         """
+        logger.debug("generate entry week_start=%s", week_start)
+        t0 = time.perf_counter()
         self._validate_week_start(week_start)
         week_end = week_start + timedelta(days=4)
 
@@ -248,10 +251,12 @@ class WeeklyDigestGenerator:
         await session.commit()
 
         logger.info(
-            "generated weekly digest for week %s-%s: %d papers, %d topics",
+            "generate done week_start=%s week_end=%s papers=%d"
+            " digests=%d elapsed_s=%.3f",
             week_start,
             week_end,
             paper_count,
             len(digests),
+            time.perf_counter() - t0,
         )
         return weekly

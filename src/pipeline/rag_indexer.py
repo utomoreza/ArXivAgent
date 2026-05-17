@@ -13,6 +13,7 @@ All denormalized metadata fields on PaperEmbedding are populated from the Paper
 row so the retriever never needs to join back to the papers table.
 """
 
+import time
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -117,10 +118,14 @@ async def index_paper(paper: Paper, session: AsyncSession) -> None:
         paper: The fully processed Paper ORM instance (must have topic_section_id set).
         session: Async SQLAlchemy session used to commit the embeddings.
     """
+    logger.debug("index_paper entry arxiv_id=%s", paper.arxiv_id)
+    t0 = time.perf_counter()
+
     abstract_text = _build_abstract_chunk(paper)
     content_text = _build_content_chunk(paper)
 
     vectors = embed([abstract_text, content_text])
+    logger.debug("embed call completed arxiv_id=%s", paper.arxiv_id)
 
     _common = {
         "arxiv_id": paper.arxiv_id,
@@ -152,9 +157,11 @@ async def index_paper(paper: Paper, session: AsyncSession) -> None:
     session.add(content_row)
     await session.commit()
 
+    elapsed = time.perf_counter() - t0
     logger.info(
-        "indexed paper %s: abstract=%d tokens, content=%d tokens",
+        "indexed paper %s: abstract=%d tokens, content=%d tokens, elapsed_s=%.3f",
         paper.arxiv_id,
         _count_tokens(abstract_text),
         _count_tokens(content_text),
+        elapsed,
     )

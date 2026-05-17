@@ -12,6 +12,7 @@ For each arxiv.Result:
 
 import io
 import re
+import time
 
 import arxiv
 import httpx
@@ -139,7 +140,8 @@ async def process_paper(result: arxiv.Result, session: AsyncSession) -> Paper | 
     submitted_date = result.published.date()
     authors = [a.name for a in result.authors]
 
-    logger.debug("processing paper %s", arxiv_id)
+    logger.debug("process_paper entry arxiv_id=%s", arxiv_id)
+    t0 = time.perf_counter()
 
     full_text = await _fetch_full_text(arxiv_id)
 
@@ -213,5 +215,10 @@ async def process_paper(result: arxiv.Result, session: AsyncSession) -> Paper | 
     session.add(paper)
     await session.commit()
 
-    logger.info("persisted paper %s topic=%s", arxiv_id, primary_topic)
+    logger.info(
+        "process_paper done arxiv_id=%s topic=%s elapsed_s=%.3f",
+        arxiv_id,
+        primary_topic,
+        time.perf_counter() - t0,
+    )
     return paper
