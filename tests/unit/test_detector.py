@@ -16,7 +16,6 @@ import pytest
 from src.db.models import Paper
 from src.pipeline.detector import detect_groundbreaking
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

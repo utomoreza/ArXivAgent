@@ -4,7 +4,7 @@ The session factory is configured by the app lifespan (T029). Tests override
 ``get_session`` via ``app.dependency_overrides``.
 """
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,6 +24,8 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         RuntimeError: If called before ``configure_session_factory``.
     """
     if _session_factory is None:
-        raise RuntimeError("Session factory not configured — call configure_session_factory first.")
+        raise RuntimeError(
+            "Session factory not configured — call configure_session_factory first."
+        )
     async with _session_factory() as session:
         yield session

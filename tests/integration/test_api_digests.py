@@ -29,6 +29,7 @@ from httpx import ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from src.api.schemas import DailyDigestData
 from src.db.models import Base, DailyDigest, DateRecord, TopicSection, WeeklyDigest
 
 # ---------------------------------------------------------------------------
@@ -136,7 +137,7 @@ async def _seed_published_digest(session: AsyncSession) -> DailyDigest:
     digest = DailyDigest(
         id=uuid.uuid4(),
         date=_DATE_PUBLISHED,
-        generated_at=datetime.datetime(2026, 1, 12, 21, 5, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2026, 1, 12, 21, 5, 0, tzinfo=datetime.UTC),
         paper_count=10,
         groundbreaking_count=2,
     )
@@ -168,7 +169,7 @@ async def _seed_weekly_digest(session: AsyncSession) -> WeeklyDigest:
         id=uuid.uuid4(),
         week_start=_WEEK_OK_START,
         week_end=_WEEK_OK_END,
-        generated_at=datetime.datetime(2026, 4, 24, 1, 5, 0, tzinfo=datetime.timezone.utc),
+        generated_at=datetime.datetime(2026, 4, 24, 1, 5, 0, tzinfo=datetime.UTC),
         paper_count=50,
         groundbreaking_count=3,
         benchmark_comparisons="## Benchmark Comparisons\n\nContent.",

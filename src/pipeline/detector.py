@@ -81,7 +81,9 @@ async def detect_groundbreaking(paper: Paper, session: AsyncSession) -> None:
 
     # Require explicit confirmation from both evidence fields regardless of
     # what the LLM set for is_groundbreaking — prevents partial flag states.
-    both_criteria = result.benchmark_improved is not None and result.novel_element is not None
+    both_criteria = (
+        result.benchmark_improved is not None and result.novel_element is not None
+    )
 
     if result.is_groundbreaking and both_criteria:
         paper.is_groundbreaking = True

@@ -1,10 +1,10 @@
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
-from datetime import date, datetime
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.db import constants
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -38,7 +38,10 @@ class Error(StrEnum):
 
 class Reason:
     NO_PAPERS_SKIP = "No new papers were published on this date."
-    FETCH_FAILURE_SKIP = "Data retrieval from arXiv failed after 3 attempts on this date — no digest available."
+    FETCH_FAILURE_SKIP = (
+        "Data retrieval from arXiv failed after 3 attempts on this date"
+        " — no digest available."
+    )
     NO_ANNOUNCEMENT = "arXiv does not publish on Fridays or Saturdays."
     FUTURE_DATE = "Date is in the future."
     BEFORE_INCEPTION_DATE = "No records available before system inception on {}."
@@ -51,16 +54,26 @@ class Reason:
 
 MAP_STATUS_TO_REASON: dict[str, str] = {
     constants.DATE_STATUS_NO_PAPERS_SKIP: "No new papers were published on this date.",
-    constants.DATE_STATUS_FETCH_FAILURE_SKIP: "Data retrieval from arXiv failed after 3 attempts on this date — no digest available.",
-    constants.DATE_STATUS_NO_ANNOUNCEMENT: "arXiv does not publish on Fridays or Saturdays.",
+    constants.DATE_STATUS_FETCH_FAILURE_SKIP: (
+        "Data retrieval from arXiv failed after 3 attempts on this date"
+        " — no digest available."
+    ),
+    constants.DATE_STATUS_NO_ANNOUNCEMENT: (
+        "arXiv does not publish on Fridays or Saturdays."
+    ),
     "future_date": "Date is in the future.",
     "before_inception_date": "No records available before system inception on {}.",
     Status.PENDING.value: "Week still ongoing — weekly digest not yet generated.",
-    Status.NOT_AVAILABLE.value: "No {} found for {} (race condition or unprocessed date)",
+    Status.NOT_AVAILABLE.value: (
+        "No {} found for {} (race condition or unprocessed date)"
+    ),
 }
 MAP_ERROR_MESSAGE = {
     Type.DAILY.value: "",
-    Type.WEEKLY.value: "week_start_date must be a Sunday (arXiv announcement week starts on Sunday).",
+    Type.WEEKLY.value: (
+        "week_start_date must be a Sunday"
+        " (arXiv announcement week starts on Sunday)."
+    ),
 }
 
 
@@ -80,16 +93,24 @@ class TopicSection(BaseDigestClass):
 
 
 class CoverageNote(BaseDigestClass):
-    announcement_days: list[str] = Field(..., examples=["Sun", "Mon", "Tue", "Wed", "Thu"])
+    announcement_days: list[str] = Field(
+        ..., examples=["Sun", "Mon", "Tue", "Wed", "Thu"]
+    )
     days_with_content: list[date]
     no_papers_skips: list[date]
     fetch_failure_skips: list[date]
 
 
 class WeeklySections(BaseDigestClass):
-    benchmark_comparisons: str = Field(..., description="Rendered Markdown — side-by-side benchmark comparisons")
-    trend_synthesis: str = Field(..., description="Rendered Markdown — per-topic weekly momentum")
-    cross_paper_analysis: str = Field(..., description="Rendered Markdown — complementary/contradictory findings")
+    benchmark_comparisons: str = Field(
+        ..., description="Rendered Markdown — side-by-side benchmark comparisons"
+    )
+    trend_synthesis: str = Field(
+        ..., description="Rendered Markdown — per-topic weekly momentum"
+    )
+    cross_paper_analysis: str = Field(
+        ..., description="Rendered Markdown — complementary/contradictory findings"
+    )
 
 
 class DailyDigestData(BaseDigestClass):
@@ -106,7 +127,9 @@ class DailyDigestData(BaseDigestClass):
         if hasattr(data, "topic_sections"):
             data = {
                 **{col.key: getattr(data, col.key) for col in data.__table__.columns},
-                "topics": sorted(data.topic_sections, key=lambda t: t.paper_count, reverse=True),
+                "topics": sorted(
+                    data.topic_sections, key=lambda t: t.paper_count, reverse=True
+                ),
                 "type": Type.DAILY,
             }
         return data
