@@ -80,6 +80,7 @@ ignore = []
 [tool.coverage.run]
 source = ["src"]
 branch = true
+concurrency = ["greenlet", "thread"]
 omit = [
     "src/migrations/*",
     "src/main.py",
