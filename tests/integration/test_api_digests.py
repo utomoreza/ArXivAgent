@@ -29,7 +29,12 @@ from httpx import ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.api.schemas import DailyDigestData
+from src.api.schemas import (
+    CoverageNote,
+    DailyDigestData,
+    WeeklyDigestData,
+    WeeklySections,
+)
 from src.db.models import Base, DailyDigest, DateRecord, TopicSection, WeeklyDigest
 
 # ---------------------------------------------------------------------------
@@ -315,35 +320,164 @@ async def test_weekly_digest_no_digest_returns_pending(client: httpx.AsyncClient
     assert body["reason"] is not None
 
 
-# @pytest.mark.asyncio
-# async def test_weekly_digest_exists_returns_ok_with_full_document(
-#     client: httpx.AsyncClient, session: AsyncSession
-# ):
-#     """An existing WeeklyDigest must return status=ok with all three sections and coverage arrays."""
-#     await _seed_weekly_digest(session)
-#     resp = await client.get(f"/digests/weekly/{_WEEK_OK_START}")
-#     assert resp.status_code == 200
-#     body = resp.json()
-#     assert body["status"] == "ok"
-#     assert body["reason"] is None
+@pytest.mark.asyncio
+async def test_weekly_digest_exists_returns_ok_with_full_document(
+    client: httpx.AsyncClient, session: AsyncSession
+):
+    """An existing WeeklyDigest must return status=ok with all three sections and coverage arrays."""
+    await _seed_weekly_digest(session)
+    resp = await client.get(f"/digests/weekly/{_WEEK_OK_START}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["reason"] is None
 
-#     data = body["data"]
-#     assert data["type"] == "weekly"
-#     assert data["week_start"] == str(_WEEK_OK_START)
-#     assert data["week_end"] == str(_WEEK_OK_END)
-#     assert data["paper_count"] == 50
-#     assert data["groundbreaking_count"] == 3
+    data = body["data"]
+    assert data["type"] == "weekly"
+    assert data["week_start"] == str(_WEEK_OK_START)
+    assert data["week_end"] == str(_WEEK_OK_END)
+    assert data["paper_count"] == 50
+    assert data["groundbreaking_count"] == 3
 
-#     coverage = data["coverage_note"]
-#     assert coverage["announcement_days"] == ["Sun", "Mon", "Tue", "Wed", "Thu"]
-#     assert isinstance(coverage["days_with_content"], list)
-#     assert isinstance(coverage["no_papers_skips"], list)
-#     assert isinstance(coverage["fetch_failure_skips"], list)
-#     assert str(datetime.date(2026, 4, 21)) in coverage["fetch_failure_skips"]
+    coverage = data["coverage_note"]
+    assert coverage["announcement_days"] == ["Sun", "Mon", "Tue", "Wed", "Thu"]
+    assert isinstance(coverage["days_with_content"], list)
+    assert isinstance(coverage["no_papers_skips"], list)
+    assert isinstance(coverage["fetch_failure_skips"], list)
+    assert str(datetime.date(2026, 4, 21)) in coverage["fetch_failure_skips"]
 
-#     sections = data["sections"]
-#     assert sections["benchmark_comparisons"] != ""
-#     assert sections["trend_synthesis"] != ""
-#     assert sections["cross_paper_analysis"] != ""
+    sections = data["sections"]
+    assert sections["benchmark_comparisons"] != ""
+    assert sections["trend_synthesis"] != ""
+    assert sections["cross_paper_analysis"] != ""
 
-#in line 172, you define `paper_count=50`, but
+
+@pytest.mark.asyncio
+async def test_daily_digest_valid_date_no_date_record_returns_empty(
+    client: httpx.AsyncClient,
+):
+    """A valid date in-window with no DateRecord must return status=empty."""
+    # 2026-02-02 (Monday) is after INCEPTION_DATE and before today — no record seeded.
+    resp = await client.get("/digests/daily/2026-02-02")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "empty"
+    assert body["data"] is None
+    assert body["reason"] is not None
+
+
+@pytest.mark.asyncio
+async def test_daily_digest_published_status_no_digest_row_returns_empty(
+    client: httpx.AsyncClient, session: AsyncSession
+):
+    """DateRecord=published with no DailyDigest row must return status=empty."""
+    # Seed only the DateRecord (published) — do not create a DailyDigest row.
+    await _seed_date_record(session, _DATE_PUBLISHED, "published")
+    resp = await client.get(f"/digests/daily/{_DATE_PUBLISHED}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "empty"
+    assert body["data"] is None
+    assert body["reason"] is not None
+
+
+@pytest.mark.asyncio
+async def test_weekly_digest_future_sunday_returns_not_available(
+    client: httpx.AsyncClient,
+):
+    """A Sunday in the future must return status=not_available."""
+    future_sunday = "2027-01-03"  # Sunday, clearly in the future
+    resp = await client.get(f"/digests/weekly/{future_sunday}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "not_available"
+    assert body["data"] is None
+    assert body["reason"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Schema direct-construction coverage
+# ---------------------------------------------------------------------------
+
+
+def test_daily_digest_data_from_dict_passes_through():
+    """DailyDigestData validator passes dicts straight through (non-ORM path)."""
+    raw = {
+        "type": "daily",
+        "date": "2026-01-12",
+        "generated_at": "2026-01-12T21:05:00+00:00",
+        "paper_count": 1,
+        "groundbreaking_count": 0,
+        "topics": [{"name": "LLMs", "paper_count": 1, "body": "body text"}],
+    }
+    obj = DailyDigestData(**raw)
+    assert obj.paper_count == 1
+
+
+def test_weekly_digest_data_from_dict_passes_through():
+    """WeeklyDigestData validator passes dicts straight through (non-ORM path)."""
+    raw = {
+        "type": "weekly",
+        "week_start": "2026-04-19",
+        "week_end": "2026-04-23",
+        "generated_at": "2026-04-24T01:05:00+00:00",
+        "paper_count": 5,
+        "groundbreaking_count": 1,
+        "coverage_note": CoverageNote(
+            announcement_days=["Sun", "Mon", "Tue", "Wed", "Thu"],
+            days_with_content=[datetime.date(2026, 4, 19)],
+            no_papers_skips=[],
+            fetch_failure_skips=[],
+        ),
+        "sections": WeeklySections(
+            benchmark_comparisons="bc",
+            trend_synthesis="ts",
+            cross_paper_analysis="cpa",
+        ),
+    }
+    obj = WeeklyDigestData(**raw)
+    assert obj.paper_count == 5
+
+
+# ---------------------------------------------------------------------------
+# deps.py coverage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_session_raises_if_factory_not_configured():
+    """get_session must raise RuntimeError when called before configure_session_factory."""
+    import src.api.deps as deps_module
+
+    original = deps_module._session_factory
+    deps_module._session_factory = None
+    try:
+        gen = deps_module.get_session()
+        try:
+            await gen.__anext__()
+            pytest.fail("Expected RuntimeError")
+        except RuntimeError as exc:
+            assert "configure_session_factory" in str(exc)
+    finally:
+        deps_module._session_factory = original
+
+
+@pytest.mark.asyncio
+async def test_configure_session_factory_and_get_session(engine):
+    """configure_session_factory stores the factory; get_session yields a working session."""
+    import src.api.deps as deps_module
+
+    original = deps_module._session_factory
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    deps_module.configure_session_factory(factory)
+    try:
+        gen = deps_module.get_session()
+        session = await gen.__anext__()
+        assert isinstance(session, AsyncSession)
+        # Exhaust the generator cleanly.
+        try:
+            await gen.aclose()
+        except StopAsyncIteration:
+            pass
+    finally:
+        deps_module._session_factory = original
