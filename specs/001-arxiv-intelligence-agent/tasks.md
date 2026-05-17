@@ -150,7 +150,7 @@ matches `contracts/openapi.yaml` → `DailyDigest` schema.
 ### Service Entry Point (US1 milestone)
 
 - [X] T029 [US1] Create `src/api/app.py` — FastAPI app factory with `@asynccontextmanager lifespan`: initialise DB engine → `async_sessionmaker` → run inception backfill check → start `AsyncIOScheduler`; shutdown disposes engine and calls `scheduler.shutdown(wait=False)`; do NOT `await scheduler.start()`; see `research.md §10` → FastAPI lifespan + APScheduler pattern
-- [ ] T030 [US1] Create `src/main.py` — import `app` from `api/app.py`; configure structured JSON logging from `settings.LOG_LEVEL` at startup; run via `uvicorn.run(app, host="0.0.0.0", port=8000)`; see `quickstart.md` → Run the Service for expected log output
+- [X] T030 [US1] Create `src/main.py` — import `app` from `api/app.py`; configure structured JSON logging from `settings.LOG_LEVEL` at startup; run via `uvicorn.run(app, host="0.0.0.0", port=8000)`; see `quickstart.md` → Run the Service for expected log output
 
 ### US1 Integration & Contract Tests
 
