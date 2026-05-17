@@ -25,6 +25,20 @@ _DATE = datetime.date(2026, 4, 21)  # Monday — valid announcement day
 
 
 # ---------------------------------------------------------------------------
+# Global mock: prevent real index_paper from being called in all unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _mock_index_paper():
+    """Prevent real rag_indexer.index_paper from being called in unit tests."""
+    with patch(
+        "src.pipeline.daily_generator.index_paper", new=AsyncMock()
+    ) as mock:
+        yield mock
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -53,6 +67,9 @@ def _make_paper(
     p.is_groundbreaking = is_groundbreaking
     p.groundbreaking_reasoning = "Reasoning." if is_groundbreaking else None
     p.topic_section_id = None
+    # Use a date far in the past so papers fall outside any RAG window by default;
+    # individual tests that need in-window papers override this explicitly.
+    p.submitted_date = datetime.date(2020, 1, 1)
     return p
 
 
@@ -299,3 +316,57 @@ async def test_topics_ordered_by_paper_count_desc() -> None:
     assert sections[0].name == "Computer Vision"
     assert sections[1].name == "Reinforcement Learning"
     assert sections[2].name == "Large Language Models"
+
+
+# ---------------------------------------------------------------------------
+# Tests: RAG indexer hook (T045)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_index_paper_called_for_in_window_papers(_mock_index_paper) -> None:
+    """index_paper is called for papers whose submitted_date >= RAG window cutoff."""
+    # Pin today and use a date just 1 day ago — always within any reasonable window
+    today = datetime.date(2026, 5, 17)
+    in_window_date = today - datetime.timedelta(days=1)
+
+    paper = _make_paper("Large Language Models", arxiv_id="2504.00001")
+    paper.submitted_date = in_window_date
+
+    session = _make_session()
+    session.get = AsyncMock(return_value=_make_date_record(DATE_STATUS_PUBLISHED))
+    session.execute = AsyncMock(return_value=_make_execute_result([paper]))
+
+    with (
+        patch("src.pipeline.daily_generator.parse_structured", new=AsyncMock(return_value=_make_body_result())),
+        patch("src.pipeline.daily_generator.datetime") as mock_dt,
+    ):
+        mock_dt.date.today.return_value = today
+        mock_dt.timedelta = datetime.timedelta
+        mock_dt.datetime.now.return_value = datetime.datetime(2026, 5, 17, tzinfo=datetime.UTC)
+        mock_dt.UTC = datetime.UTC
+        await DailyDigestGenerator().generate(_DATE, session)
+
+    _mock_index_paper.assert_awaited_once_with(paper, session)
+
+
+@pytest.mark.asyncio
+async def test_index_paper_not_called_for_out_of_window_papers(_mock_index_paper) -> None:
+    """index_paper is NOT called for papers whose submitted_date is before the RAG window."""
+    # Use a date from 2020 — guaranteed to be outside any reasonable RAG_WINDOW_DAYS
+    out_of_window_date = datetime.date(2020, 1, 1)
+
+    paper = _make_paper("Large Language Models", arxiv_id="2504.00001")
+    paper.submitted_date = out_of_window_date
+
+    session = _make_session()
+    session.get = AsyncMock(return_value=_make_date_record(DATE_STATUS_PUBLISHED))
+    session.execute = AsyncMock(return_value=_make_execute_result([paper]))
+
+    with patch(
+        "src.pipeline.daily_generator.parse_structured",
+        new=AsyncMock(return_value=_make_body_result()),
+    ):
+        await DailyDigestGenerator().generate(_DATE, session)
+
+    _mock_index_paper.assert_not_awaited()

@@ -19,6 +19,7 @@ from src.config import get_settings
 from src.db import constants
 from src.db.models import DailyDigest, DateRecord, Paper, TopicSection
 from src.llm.client import parse_structured
+from src.pipeline.rag_indexer import index_paper
 from src.utils.funcs import logger
 
 _config = get_settings()
@@ -210,6 +211,14 @@ class DailyDigestGenerator:
         # in-memory; avoids triggering lazy loading after the session flushes.
         digest.topic_sections = sections
         await session.commit()
+
+        # Index papers within the RAG window after topic_section_id is set.
+        cutoff = (
+            datetime.date.today() - datetime.timedelta(days=_config.RAG_WINDOW_DAYS)
+        )
+        for paper in papers:
+            if paper.submitted_date >= cutoff:
+                await index_paper(paper, session)
 
         logger.info(
             "generated daily digest for %s: %d papers, %d groundbreaking, %d topics",
