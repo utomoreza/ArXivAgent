@@ -3,20 +3,17 @@
 
 For each arxiv.Result:
 1. Fetch HTML from ``arxiv.org/html/{arxiv_id}`` via httpx.
-2. Fall back to pdfplumber PDF parse if HTML returns non-200.
-3. Call Claude Sonnet via ``parse_structured`` for structured extraction
+2. Call Claude Sonnet via ``parse_structured`` for structured extraction
    (contributions, methodologies, benchmarks, institutions).
-4. Call Claude Haiku via ``classify`` to assign a primary topic.
-5. Persist a ``Paper`` row and return it.
+3. Call Claude Haiku via ``classify`` to assign a primary topic.
+4. Persist a ``Paper`` row and return it.
 """
 
-import io
 import re
 import time
 
 import arxiv
 import httpx
-import pdfplumber
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +24,6 @@ from src.llm.client import classify, parse_structured
 from src.utils.funcs import logger
 
 _ARXIV_HTML_BASE = "https://arxiv.org/html"
-_ARXIV_PDF_BASE = "https://arxiv.org/pdf"
 _FULL_TEXT_CHAR_LIMIT = 8000
 _REGEX_PARSE_ARXIV_ID = r"abs/([^v/]+)"
 
@@ -62,56 +58,38 @@ def _parse_arxiv_id(entry_id: str) -> str:
 
 
 async def _fetch_full_text(arxiv_id: str) -> str:
-    """Fetch full paper text, trying HTML first then PDF.
+    """Fetch full paper text from the HTML rendering on arxiv.org.
+
+    Returns an empty string if the HTML endpoint is unreachable or returns a
+    non-200 status; the caller handles empty full text gracefully.
 
     Args:
         arxiv_id: Bare arXiv ID, e.g. ``'2504.12345'``.
 
     Returns:
-        Extracted text string (may be empty if both sources yield nothing).
+        HTML text of the paper, or ``""`` on any fetch failure.
     """
     html_url = f"{_ARXIV_HTML_BASE}/{arxiv_id}"
-    pdf_url = f"{_ARXIV_PDF_BASE}/{arxiv_id}"
 
     async with httpx.AsyncClient() as client:
         try:
             html_response = await client.get(html_url)
-            html_ok = html_response.status_code == 200
         except Exception as exc:
             logger.warning(
-                "HTML fetch failed for %s: %s; falling back to PDF", arxiv_id, exc
-            )
-            html_ok = False
-
-        if html_ok:
-            logger.debug("HTML fetch succeeded for %s", arxiv_id)
-            return html_response.text  # type: ignore[possibly-undefined]
-
-        logger.debug("Falling back to PDF for %s", arxiv_id)
-        try:
-            pdf_response = await client.get(pdf_url)
-        except Exception as exc:
-            logger.error(
-                "PDF fetch failed for %s: %s; returning empty text", arxiv_id, exc
+                "HTML fetch failed for %s: %s; returning empty text", arxiv_id, exc
             )
             return ""
 
-    if pdf_response.status_code != 200:
-        logger.error(
-            "PDF fetch returned %d for %s; returning empty text",
-            pdf_response.status_code,
+    if html_response.status_code != 200:
+        logger.warning(
+            "HTML fetch returned %d for %s; returning empty text",
+            html_response.status_code,
             arxiv_id,
         )
         return ""
 
-    try:
-        with pdfplumber.open(io.BytesIO(pdf_response.content)) as pdf:
-            pages = [page.extract_text() or "" for page in pdf.pages]
-    except Exception as exc:
-        logger.error("PDF parse failed for %s: %s; returning empty text", arxiv_id, exc)
-        return ""
-
-    return "\n".join(pages)
+    logger.debug("HTML fetch succeeded for %s", arxiv_id)
+    return html_response.text
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +100,7 @@ async def _fetch_full_text(arxiv_id: str) -> str:
 async def process_paper(result: arxiv.Result, session: AsyncSession) -> Paper | None:
     """Fetch, extract, classify, and persist a single arXiv paper.
 
-    Fetches full text (HTML preferred, PDF fallback), runs structured
+    Fetches full text from the HTML rendering on arxiv.org, runs structured
     extraction via Claude Sonnet, assigns a primary topic via Claude Haiku,
     and persists the resulting ``Paper`` row.
 

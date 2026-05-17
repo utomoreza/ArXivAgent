@@ -3,12 +3,13 @@
 Covers:
 - primary_topic is always a member of TOPIC_LIST
 - groundbreaking_reasoning is null and is_groundbreaking is False (default)
-- HTML fetch is attempted before PDF fallback; PDF called only on non-200
+- HTML fetch is attempted; empty string returned on failure or non-200
 - parse_structured is called for extraction
 - paper is persisted to DB via session.add + session.commit
 """
 
 import datetime
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -67,7 +68,7 @@ def _make_http_client(status_code: int = 200, text: str = "html body") -> MagicM
     http.__aenter__ = AsyncMock(return_value=http)
     http.__aexit__ = AsyncMock(return_value=False)
     http.get = AsyncMock(
-        return_value=MagicMock(status_code=status_code, text=text, content=b"")
+        return_value=MagicMock(status_code=status_code, text=text)
     )
     return http
 
@@ -125,12 +126,12 @@ async def test_groundbreaking_defaults_are_false_and_null() -> None:
 
 
 # ---------------------------------------------------------------------------
-# HTML first, PDF fallback
+# HTML fetch behaviour
 # ---------------------------------------------------------------------------
 
 
-async def test_html_url_is_fetched_first() -> None:
-    """The first GET targets arxiv.org/html/{arxiv_id}, not the PDF endpoint."""
+async def test_html_url_is_fetched() -> None:
+    """The GET targets arxiv.org/html/{arxiv_id}."""
     http = _make_http_client(status_code=200)
 
     with patch("httpx.AsyncClient", return_value=http):
@@ -141,114 +142,52 @@ async def test_html_url_is_fetched_first() -> None:
     assert _ARXIV_ID in first_url
 
 
-async def test_pdf_not_called_when_html_succeeds() -> None:
-    """pdfplumber is never opened when the HTML response is 200."""
-    with patch("httpx.AsyncClient", return_value=_make_http_client(status_code=200)):
-        with patch("pdfplumber.open") as mock_pdf:
-            await process_paper(_make_arxiv_result(), _make_session())
-
-    mock_pdf.assert_not_called()
-
-
-async def test_pdf_fallback_when_html_returns_non_200() -> None:
-    """pdfplumber.open is called when the HTML fetch returns non-200."""
-    html_resp = MagicMock(status_code=404, text="", content=b"")
-    pdf_resp = MagicMock(status_code=200, text="", content=b"%PDF fake")
-
-    http = MagicMock()
-    http.__aenter__ = AsyncMock(return_value=http)
-    http.__aexit__ = AsyncMock(return_value=False)
-    http.get = AsyncMock(side_effect=[html_resp, pdf_resp])
-
-    fake_pdf = MagicMock()
-    fake_pdf.__enter__ = MagicMock(return_value=fake_pdf)
-    fake_pdf.__exit__ = MagicMock(return_value=False)
-    fake_page = MagicMock()
-    fake_page.extract_text.return_value = "extracted text"
-    fake_pdf.pages = [fake_page]
-
-    with patch("httpx.AsyncClient", return_value=http):
-        with patch("pdfplumber.open", return_value=fake_pdf) as mock_pdf:
-            await process_paper(_make_arxiv_result(), _make_session())
-
-    mock_pdf.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# HTML exception → PDF fallback
-# ---------------------------------------------------------------------------
-
-
-async def test_html_exception_falls_back_to_pdf() -> None:
-    """An exception from the HTML GET triggers PDF fallback instead of returning empty."""
-    pdf_resp = MagicMock(status_code=200, text="", content=b"%PDF fake")
-
-    http = MagicMock()
-    http.__aenter__ = AsyncMock(return_value=http)
-    http.__aexit__ = AsyncMock(return_value=False)
-    http.get = AsyncMock(side_effect=[OSError("connection refused"), pdf_resp])
-
-    fake_pdf = MagicMock()
-    fake_pdf.__enter__ = MagicMock(return_value=fake_pdf)
-    fake_pdf.__exit__ = MagicMock(return_value=False)
-    fake_page = MagicMock()
-    fake_page.extract_text.return_value = "pdf text"
-    fake_pdf.pages = [fake_page]
-
-    with patch("httpx.AsyncClient", return_value=http):
-        with patch("pdfplumber.open", return_value=fake_pdf):
+async def test_html_non_200_returns_empty_text_paper_still_persisted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Non-200 HTML response yields empty full text; paper is still persisted."""
+    arxiv_logger = logging.getLogger("ArXivAgent_Logger")
+    arxiv_logger.addHandler(caplog.handler)
+    caplog.set_level(logging.WARNING, logger="ArXivAgent_Logger")
+    try:
+        with patch("httpx.AsyncClient", return_value=_make_http_client(status_code=404)):
             paper = await process_paper(_make_arxiv_result(), _make_session())
+    finally:
+        arxiv_logger.removeHandler(caplog.handler)
 
     assert paper is not None
-    assert http.get.call_count == 2  # HTML attempted, then PDF
+    assert any(
+        _ARXIV_ID in r.message and "404" in r.message
+        for r in caplog.records
+        if r.levelno >= logging.WARNING
+    )
 
 
-async def test_pdf_fetch_exception_returns_empty_text_not_none() -> None:
-    """PDF GET exception yields empty full text; paper is still persisted."""
-    html_resp = MagicMock(status_code=404, text="", content=b"")
-
+async def test_html_exception_returns_empty_text_paper_still_persisted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An exception from the HTML GET yields empty full text; paper is still persisted."""
+    arxiv_logger = logging.getLogger("ArXivAgent_Logger")
+    arxiv_logger.addHandler(caplog.handler)
+    caplog.set_level(logging.WARNING, logger="ArXivAgent_Logger")
     http = MagicMock()
     http.__aenter__ = AsyncMock(return_value=http)
     http.__aexit__ = AsyncMock(return_value=False)
-    http.get = AsyncMock(side_effect=[html_resp, OSError("timeout")])
+    http.get = AsyncMock(side_effect=OSError("connection refused"))
 
-    with patch("httpx.AsyncClient", return_value=http):
-        paper = await process_paper(_make_arxiv_result(), _make_session())
-
-    assert paper is not None
-
-
-async def test_pdf_non_200_returns_empty_text_not_none() -> None:
-    """PDF GET non-200 yields empty full text; paper is still persisted."""
-    html_resp = MagicMock(status_code=404, text="", content=b"")
-    pdf_resp = MagicMock(status_code=503, text="", content=b"")
-
-    http = MagicMock()
-    http.__aenter__ = AsyncMock(return_value=http)
-    http.__aexit__ = AsyncMock(return_value=False)
-    http.get = AsyncMock(side_effect=[html_resp, pdf_resp])
-
-    with patch("httpx.AsyncClient", return_value=http):
-        paper = await process_paper(_make_arxiv_result(), _make_session())
-
-    assert paper is not None
-
-
-async def test_pdf_parse_exception_returns_empty_text_not_none() -> None:
-    """pdfplumber raising on corrupt bytes yields empty full text; paper is still persisted."""
-    html_resp = MagicMock(status_code=404, text="", content=b"")
-    pdf_resp = MagicMock(status_code=200, text="", content=b"not a pdf")
-
-    http = MagicMock()
-    http.__aenter__ = AsyncMock(return_value=http)
-    http.__aexit__ = AsyncMock(return_value=False)
-    http.get = AsyncMock(side_effect=[html_resp, pdf_resp])
-
-    with patch("httpx.AsyncClient", return_value=http):
-        with patch("pdfplumber.open", side_effect=ValueError("bad pdf")):
+    try:
+        with patch("httpx.AsyncClient", return_value=http):
             paper = await process_paper(_make_arxiv_result(), _make_session())
+    finally:
+        arxiv_logger.removeHandler(caplog.handler)
 
     assert paper is not None
+    assert http.get.call_count == 1
+    assert any(
+        _ARXIV_ID in r.message
+        for r in caplog.records
+        if r.levelno >= logging.WARNING
+    )
 
 
 # ---------------------------------------------------------------------------
