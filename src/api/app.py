@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from src.api.deps import configure_session_factory
 from src.api.routers.digests import router as digests_router
+from src.api.routers.qa import router as qa_router
 from src.config import get_settings
 from src.db.session import create_engine_and_factory
 from src.scheduler.jobs import run_inception_backfill, setup_scheduler
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(digests_router)
+    app.include_router(qa_router)
     return app
 
 

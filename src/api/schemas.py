@@ -194,3 +194,54 @@ class WeeklyDigestResponse(BaseDigestClass):
 class ErrorResponse(BaseDigestClass):
     error: Error
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Q&A Schemas (US3)
+# ---------------------------------------------------------------------------
+
+
+class QARequest(BaseModel):
+    """Request body for POST /qa."""
+
+    question: str = Field(..., min_length=1, max_length=2000)
+
+
+class QASource(BaseDigestClass):
+    """A single paper chunk cited in a Q&A answer."""
+
+    arxiv_id: str
+    title: str
+    date: date
+    chunk_type: str
+
+
+class QAAnswer(BaseDigestClass):
+    """Answer payload returned when the knowledge base has relevant content."""
+
+    answer: str
+    sources: list[QASource]
+
+
+class QAResponse(BaseDigestClass):
+    """Envelope for a successful in-scope Q&A answer."""
+
+    status: Status
+    data: QAAnswer | None = None
+    reason: str | None = None
+
+
+class RejectedResponse(BaseDigestClass):
+    """Envelope for an out-of-scope question rejection."""
+
+    status: Status = Status.REJECTED
+    data: None = None
+    reason: str
+
+
+class EmptyKBResponse(BaseDigestClass):
+    """Envelope returned when no in-window embeddings exist."""
+
+    status: Status = Status.EMPTY
+    data: None = None
+    reason: str
