@@ -66,19 +66,41 @@ class Fetcher:
             delay_seconds=_ARXIV_DELAY_SECONDS,
             num_retries=_ARXIV_NUM_RETRIES,
         )
-        self._search: arxiv.Search = search or self._build_search()
+        self._search: arxiv.Search | None = search  # None → build per date
 
     # ------------------------------------------------------------------
     # Construction helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _build_search() -> arxiv.Search:
-        """Build the Search template from the configured category list."""
+    def _build_search(self, date: datetime.date) -> arxiv.Search:
+        """Build a date-specific arXiv search for the given announcement date.
+
+        Constructs a submittedDate range matching arXiv's 14:00 ET cutoff so that
+        only papers actually announced on *date* are returned. When a search is
+        injected at construction time (test override), returns that instead.
+
+        Args:
+            date: Announcement date to build the search for.
+
+        Returns:
+            arxiv.Search configured for *date*'s submission window.
+        """
+        if self._search is not None:
+            return self._search
         settings = get_settings()
         category_query = " OR ".join(f"cat:{cat}" for cat in settings.ARXIV_CATEGORIES)
+        weekday = date.weekday()  # 0=Mon … 6=Sun
+        if weekday == 0:  # Monday — covers Fri+Sat+Sun+Mon-morning
+            days_back = 3
+        elif weekday == 6:  # Sunday — covers Thu+Fri+Sat+Sun-morning
+            days_back = 3
+        else:  # Tue-Sat: previous day
+            days_back = 1
+        from_date = date - datetime.timedelta(days=days_back)
+        from_ts = from_date.strftime("%Y%m%d1400")
+        to_ts = date.strftime("%Y%m%d1400")
         return arxiv.Search(
-            query=category_query,
+            query=f"({category_query}) AND submittedDate:[{from_ts} TO {to_ts}]",
             max_results=_FETCH_MAX_RESULTS,
             sort_by=arxiv.SortCriterion.SubmittedDate,
         )
@@ -88,8 +110,11 @@ class Fetcher:
     # ------------------------------------------------------------------
 
     @with_retry(max_retries=_RETRY_ATTEMPTS, base_seconds=1.0)
-    async def _fetch_with_retry(self) -> list[arxiv.Result]:
-        """Fetch raw results from arXiv; retry logic is handled by ``with_retry``.
+    async def _fetch_with_retry(self, date: datetime.date) -> list[arxiv.Result]:
+        """Fetch raw arXiv results for *date*; retry logic handled by ``with_retry``.
+
+        Args:
+            date: Announcement date whose submission window should be fetched.
 
         Returns:
             List of arxiv.Result objects (may span multiple announcement dates).
@@ -98,8 +123,9 @@ class Fetcher:
             Exception: Re-raises the last error after all attempts are exhausted.
         """
         t0 = time.monotonic()
+        search = self._build_search(date)
         results = await asyncio.to_thread(
-            lambda: list(self._client.results(self._search))
+            lambda: list(self._client.results(search))
         )
         logger.info("got %d results in %.2fs", len(results), time.monotonic() - t0)
         return results
@@ -174,7 +200,7 @@ class Fetcher:
 
         # Fetch with retry
         try:
-            raw_results = await self._fetch_with_retry()
+            raw_results = await self._fetch_with_retry(date)
             result = await Fetcher._postprocess_fetched_results(
                 raw_results, date, session
             )

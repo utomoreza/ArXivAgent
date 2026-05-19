@@ -298,7 +298,7 @@ async def test_all_papers_from_wrong_date_treated_as_no_papers_skip(
 
 
 def test_build_search_constructs_arxiv_search_from_settings() -> None:
-    """Fetcher._build_search() creates an arxiv.Search using ARXIV_CATEGORIES
+    """Fetcher._build_search(date) creates an arxiv.Search using ARXIV_CATEGORIES
     from settings when no search is injected at construction time.
     """
     fake_settings = MagicMock()
@@ -306,15 +306,49 @@ def test_build_search_constructs_arxiv_search_from_settings() -> None:
 
     with patch("src.pipeline.fetcher.get_settings", return_value=fake_settings):
         f = Fetcher(client=MagicMock())
+        result = f._build_search(datetime.date(2026, 5, 20))  # Tuesday
 
-    assert isinstance(f._search, arxiv.Search)
+    assert isinstance(result, arxiv.Search)
+    assert "cat:cs.LG" in result.query
+    assert "submittedDate:" in result.query
 
 
 def test_injected_search_skips_build_search() -> None:
-    """When search= is injected, _build_search() must not be called."""
+    """When search= is injected, _build_search() must not call get_settings."""
     injected = MagicMock(spec=arxiv.Search)
 
     with patch("src.pipeline.fetcher.get_settings", side_effect=AssertionError("should not call get_settings")):
         f = Fetcher(client=MagicMock(), search=injected)
 
     assert f._search is injected
+    assert f._build_search(datetime.date(2026, 5, 20)) is injected
+
+
+def test_build_search_monday_uses_3_day_lookback() -> None:
+    """Monday announcement window covers Fri+Sat+Sun+Mon (3 days back)."""
+    fake_settings = MagicMock()
+    fake_settings.ARXIV_CATEGORIES = ["cs.LG"]
+
+    monday = datetime.date(2026, 5, 18)  # Monday
+    with patch("src.pipeline.fetcher.get_settings", return_value=fake_settings):
+        f = Fetcher(client=MagicMock())
+        result = f._build_search(monday)
+
+    # from_date = 2026-05-15 (Friday), to_date = 2026-05-18 (Monday)
+    assert "20260515" in result.query
+    assert "20260518" in result.query
+
+
+def test_build_search_sunday_uses_3_day_lookback() -> None:
+    """Sunday announcement window covers Thu+Fri+Sat+Sun (3 days back)."""
+    fake_settings = MagicMock()
+    fake_settings.ARXIV_CATEGORIES = ["cs.LG"]
+
+    sunday = datetime.date(2026, 5, 17)  # Sunday
+    with patch("src.pipeline.fetcher.get_settings", return_value=fake_settings):
+        f = Fetcher(client=MagicMock())
+        result = f._build_search(sunday)
+
+    # from_date = 2026-05-14 (Thursday), to_date = 2026-05-17 (Sunday)
+    assert "20260514" in result.query
+    assert "20260517" in result.query
