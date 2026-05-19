@@ -17,14 +17,18 @@ import anthropic
 from anthropic import AsyncAnthropic
 from pydantic import BaseModel, ConfigDict
 
+from src.config import get_settings
 from src.utils.funcs import logger, with_retry
 
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
 
 # Single shared client instance — created once at import time; no API calls
-# are made until a coroutine is awaited.
-_client = AsyncAnthropic()
+# are made until a coroutine is awaited.  The API key is read from settings
+# (which load from .env via pydantic-settings) rather than relying on the
+# Anthropic SDK to find it in os.environ, which pydantic-settings does NOT
+# mutate.
+_client = AsyncAnthropic(api_key=get_settings().ANTHROPIC_API_KEY)
 
 
 class Events(StrEnum):

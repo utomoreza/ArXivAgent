@@ -43,17 +43,29 @@ router = APIRouter(
 async def get_digest_daily(date: str, session: AsyncSession = Depends(get_session)):
     logger.debug("GET /digests/daily/%s", date)
     t0 = time.perf_counter()
-    requested_date = datetime.fromisoformat(date)
+    try:
+        requested_date = datetime.fromisoformat(date)
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error=Error.VALIDATION,
+                message="Invalid date format. Expected YYYY-MM-DD.",
+            ).model_dump(),
+        )
     if requested_date > datetime.today():
         return DailyDigestResponse(
             status=Status.NOT_AVAILABLE,
             reason=MAP_STATUS_TO_REASON.get("future_date"),
         )
 
-    if requested_date.date() < get_settings().INCEPTION_DATE:
+    settings = get_settings()
+    if requested_date.date() < settings.INCEPTION_DATE:
         return DailyDigestResponse(
             status=Status.NOT_FOUND,
-            reason=MAP_STATUS_TO_REASON.get("before_inception_date"),
+            reason=MAP_STATUS_TO_REASON.get("before_inception_date", "").format(
+                settings.INCEPTION_DATE
+            ),
         )
 
     stmt = select(DateRecord).where(DateRecord.date == requested_date.date())
@@ -119,7 +131,16 @@ async def get_digest_weekly(
 ):
     logger.debug("GET /digests/weekly/%s", week_start_date)
     t0 = time.perf_counter()
-    requested_week_start_date = datetime.fromisoformat(week_start_date)
+    try:
+        requested_week_start_date = datetime.fromisoformat(week_start_date)
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error=Error.VALIDATION,
+                message="Invalid date format. Expected YYYY-MM-DD.",
+            ).model_dump(),
+        )
     if requested_week_start_date.weekday() != _SUNDAY:
         return JSONResponse(
             status_code=400,
@@ -129,10 +150,13 @@ async def get_digest_weekly(
             ).model_dump(),
         )
 
-    if requested_week_start_date.date() < get_settings().INCEPTION_DATE:
+    settings = get_settings()
+    if requested_week_start_date.date() < settings.INCEPTION_DATE:
         return WeeklyDigestResponse(
             status=Status.NOT_FOUND,
-            reason=MAP_STATUS_TO_REASON.get("before_inception_date"),
+            reason=MAP_STATUS_TO_REASON.get("before_inception_date", "").format(
+                settings.INCEPTION_DATE
+            ),
         )
 
     if requested_week_start_date > datetime.today():

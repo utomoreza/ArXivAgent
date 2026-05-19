@@ -481,3 +481,28 @@ async def test_configure_session_factory_and_get_session(engine):
             pass
     finally:
         deps_module._session_factory = original
+
+
+# ---------------------------------------------------------------------------
+# Invalid date format — 400 validation error
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_daily_digest_invalid_date_format_returns_400(client: httpx.AsyncClient):
+    """A malformed date string must return HTTP 400 with error=validation_error."""
+    resp = await client.get("/digests/daily/not-a-date")
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"] == "validation_error"
+    assert "Invalid date format" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_weekly_digest_invalid_date_format_returns_400(client: httpx.AsyncClient):
+    """A malformed week_start_date string must return HTTP 400 with error=validation_error."""
+    resp = await client.get("/digests/weekly/not-a-date")
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"] == "validation_error"
+    assert "Invalid date format" in body["message"]
