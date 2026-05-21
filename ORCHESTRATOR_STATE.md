@@ -25,9 +25,25 @@ BUG-002: datetime.fromisoformat() on bad date → unhandled ValueError → HTTP 
 BUG-003: not_found reason string returned literal "{}" instead of INCEPTION_DATE
   Fix: .format(settings.INCEPTION_DATE) at call site in digests.py
 
+## Bugs fixed in session 2026-05-21 (commit 67d661b)
+
+BUG-004: Fetcher historical backfill returned 0 papers for past dates
+  Root cause: _build_search() built a single global search (500 most-recent papers),
+  never matching historical dates in _postprocess_fetched_results.
+  Fix: per-date submittedDate range query with 3-day lookback for Mon/Sun.
+
+BUG-005: Timezone bug — papers announced Mon 20:00 ET have published.date() == Tue UTC
+  Root cause: arXiv announces at 20:00 ET = 00:00 UTC next day during EDT.
+  _postprocess_fetched_results compared strictly to date, dropping all midnight-EDT papers.
+  Fix: accept date+1 as valid published date; reject date+2 and beyond.
+
+BUG-006: Backfill not resumable after server restart or crash
+  Root cause: run_inception_backfill returned early if ANY DateRecord existed.
+  Fix: per-date idempotent check; resumes digest generation for published dates missing digest.
+
 ## Final test state
 
-309 unit + integration tests PASS, 0 ruff violations, 99% coverage.
+318 unit + integration tests PASS, 0 ruff violations, 99% coverage.
 All 11 digest endpoints and all 3 QA endpoint scenarios verified live.
 
 ## Key environment facts

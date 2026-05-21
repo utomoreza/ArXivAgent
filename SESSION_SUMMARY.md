@@ -76,3 +76,4 @@ None — all tasks were already complete from prior sessions.
    these are unreachable in tests without a real running pool. This is a known exemption.
 
 3. Branch is ready to merge when the live QA answer path is validated with real paper data.
+q
