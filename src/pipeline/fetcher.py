@@ -134,12 +134,21 @@ class Fetcher:
     async def _postprocess_fetched_results(
         results: list[arxiv.Result], date: datetime.date, session: AsyncSession
     ) -> FetchResult:
-        """Keep only papers whose published date matches *date*.
+        """Keep only papers whose published date falls within *date*'s window.
 
-        The category feed spans multiple announcement days (timezone boundary
-        effects), so client-side filtering is required — see research.md §1.
+        arXiv announces at 20:00 ET. During EDT (UTC-4, ~Mar-Nov) that is
+        00:00 UTC the **next** calendar day, so a paper announced on *date*
+        may have ``r.published.date() == date + 1`` in UTC.  Accepting both
+        *date* and *date + 1* handles the midnight-offset case without
+        admitting papers from unrelated announcement windows, because
+        ``_build_search`` already constrains the query to *date*'s submission
+        window via ``submittedDate``.
         """
-        papers = [r for r in results if r.published.date() == date]
+        papers = [
+            r for r in results
+            if r.published.date() == date
+            or r.published.date() == date + datetime.timedelta(days=1)
+        ]
 
         if not papers:
             record = DateRecord(date=date, status=constants.DATE_STATUS_NO_PAPERS_SKIP)

@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from src.config import get_settings
 from src.db.constants import DATE_STATUS_NO_ANNOUNCEMENT, DATE_STATUS_PUBLISHED
-from src.db.models import DateRecord
+from src.db.models import DailyDigest, DateRecord
 from src.pipeline.daily_generator import DailyDigestGenerator
 from src.pipeline.detector import detect_groundbreaking
 from src.pipeline.fetcher import Fetcher
@@ -118,17 +118,23 @@ async def _run_weekly_job(session_factory) -> None:
 
 
 async def run_inception_backfill(session_factory) -> None:
-    """Run a full historical backfill if no DateRecord rows exist.
+    """Run a resumable historical backfill from INCEPTION_DATE through yesterday.
 
-    Checks whether the ``date_records`` table has any rows. When rows exist
-    the function exits immediately — safe to call on every service startup.
+    Safe to call on every service startup. Each date is processed
+    idempotently: already-complete dates are skipped, and interrupted dates
+    (``DateRecord`` written but ``DailyDigest`` missing) are resumed at the
+    digest-generation step without re-fetching papers.
 
-    When the table is empty:
+    Processing order:
 
     1. **Daily pass** — iterates INCEPTION_DATE → yesterday.
-       - Fri/Sat: writes a ``no_announcement`` DateRecord, no pipeline.
-       - Announcement days (Sun-Thu): runs the full pipeline.
-    2. **Weekly pass** - calls WeeklyDigestGenerator for every Sun-Thu week
+       - Fri/Sat: writes a ``no_announcement`` DateRecord if not already present.
+       - Announcement days (Sun-Thu):
+         - No ``DateRecord`` → run the full pipeline.
+         - ``DateRecord`` with ``status=published`` but no ``DailyDigest`` →
+           resume by running digest generation only (papers already processed).
+         - Any other status → already handled (skip/failure); do nothing.
+    2. **Weekly pass** — calls WeeklyDigestGenerator for every Sun-Thu week
        that overlaps the backfill range (complete or partial), in order.
        A ``None`` return (no daily digests found) does not halt iteration.
 
@@ -139,13 +145,6 @@ async def run_inception_backfill(session_factory) -> None:
     inception: datetime.date = settings.INCEPTION_DATE
     yesterday = _today() - datetime.timedelta(days=1)
 
-    async with session_factory() as session:
-        result = await session.execute(select(DateRecord))
-        existing = result.scalars().first()
-        if existing is not None:
-            logger.info("backfill skipped: DateRecord rows already exist")
-            return
-
     logger.info("starting inception backfill from %s to %s", inception, yesterday)
 
     # --- Daily pass ---
@@ -153,12 +152,40 @@ async def run_inception_backfill(session_factory) -> None:
     while current <= yesterday:
         async with session_factory() as session:
             if _is_no_announcement_day(current):
-                record = DateRecord(date=current, status=DATE_STATUS_NO_ANNOUNCEMENT)
-                session.add(record)
-                await session.commit()
-                logger.debug("wrote %s for %s", DATE_STATUS_NO_ANNOUNCEMENT, current)
+                existing = await session.scalar(
+                    select(DateRecord).where(DateRecord.date == current)
+                )
+                if existing is None:
+                    record = DateRecord(
+                        date=current, status=DATE_STATUS_NO_ANNOUNCEMENT
+                    )
+                    session.add(record)
+                    await session.commit()
+                    logger.debug(
+                        "wrote %s for %s", DATE_STATUS_NO_ANNOUNCEMENT, current
+                    )
             else:
-                await _run_pipeline_for_date(current, session)
+                existing = await session.scalar(
+                    select(DateRecord).where(DateRecord.date == current)
+                )
+                if existing is None:
+                    # Not started — run full pipeline
+                    await _run_pipeline_for_date(current, session)
+                elif existing.status == DATE_STATUS_PUBLISHED:
+                    # Fetch+process done but digest may be missing — check
+                    digest = await session.scalar(
+                        select(DailyDigest).where(DailyDigest.date == current)
+                    )
+                    if digest is None:
+                        # Interrupted after fetch — run generator only
+                        generator = DailyDigestGenerator()
+                        await generator.generate(current, session)
+                        logger.info("resumed digest generation for %s", current)
+                    else:
+                        logger.debug(
+                            "date already fully processed, skipping %s", current
+                        )
+                # else: status is skip/failure — nothing to do
         current += datetime.timedelta(days=1)
 
     # --- Weekly pass ---

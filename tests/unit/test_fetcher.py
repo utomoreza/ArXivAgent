@@ -162,14 +162,15 @@ async def test_papers_from_other_dates_in_api_response_are_excluded(
 ) -> None:
     """The arXiv category feed can include papers from adjacent dates (timezone
     boundary effects). The fetcher must return only papers whose published date
-    matches the requested date; papers from other dates are silently dropped.
+    is within the allowed window (date or date+1 UTC); papers dated date+2 or
+    earlier than date are silently dropped.
     """
     monday = datetime.date(2026, 4, 28)
-    tuesday = datetime.date(2026, 4, 29)
+    wednesday = monday + datetime.timedelta(days=2)  # date+2: outside window
     paper_monday = _make_result(monday)
-    paper_tuesday = _make_result(tuesday)
-    # API returns both; fetcher should keep only Monday's paper
-    mock_client.results.return_value = [paper_monday, paper_tuesday]
+    paper_wednesday = _make_result(wednesday)
+    # API returns both; fetcher should keep only Monday's paper (Wednesday is date+2)
+    mock_client.results.return_value = [paper_monday, paper_wednesday]
     session = _make_session()
 
     result = await fetcher.fetch_papers(monday, session)
@@ -177,6 +178,52 @@ async def test_papers_from_other_dates_in_api_response_are_excluded(
     assert result.status == constants.DATE_STATUS_PUBLISHED
     assert len(result.papers) == 1
     assert result.papers[0] is paper_monday
+
+
+async def test_papers_published_next_day_utc_are_included(
+    fetcher: Fetcher,
+    mock_client: MagicMock,
+) -> None:
+    """Papers whose UTC published date is date+1 must be kept.
+
+    arXiv announces at 20:00 ET. During EDT (UTC-4) that becomes 00:00 UTC
+    the next calendar day, so r.published.date() is date+1 even though the
+    paper belongs to date's announcement.  The fetcher must accept these.
+    """
+    monday = datetime.date(2026, 4, 28)
+    tuesday = monday + datetime.timedelta(days=1)
+    # Simulate a paper that arrived at 00:00 UTC Tuesday (20:00 EDT Monday)
+    paper_utc_offset = _make_result(tuesday)
+    mock_client.results.return_value = [paper_utc_offset]
+    session = _make_session()
+
+    result = await fetcher.fetch_papers(monday, session)
+
+    assert result.status == constants.DATE_STATUS_PUBLISHED
+    assert len(result.papers) == 1
+    assert result.papers[0] is paper_utc_offset
+
+
+async def test_papers_published_two_days_later_are_excluded(
+    fetcher: Fetcher,
+    mock_client: MagicMock,
+) -> None:
+    """Papers whose UTC published date is date+2 or beyond must be dropped.
+
+    Only date and date+1 are within the EDT midnight-offset window.  A paper
+    timestamped date+2 cannot belong to date's announcement and must be
+    filtered out, leaving no valid papers → no_papers_skip.
+    """
+    monday = datetime.date(2026, 4, 28)
+    wednesday = monday + datetime.timedelta(days=2)
+    paper_too_late = _make_result(wednesday)
+    mock_client.results.return_value = [paper_too_late]
+    session = _make_session()
+
+    result = await fetcher.fetch_papers(monday, session)
+
+    assert result.status == constants.DATE_STATUS_NO_PAPERS_SKIP
+    assert result.papers == []
 
 
 # ---------------------------------------------------------------------------
@@ -276,12 +323,14 @@ async def test_all_papers_from_wrong_date_treated_as_no_papers_skip(
     fetcher: Fetcher,
     mock_client: MagicMock,
 ) -> None:
-    """If the API returns papers but all are from a different date, treat the
-    result the same as an empty response: write no_papers_skip.
+    """If the API returns papers but all are outside the allowed UTC window,
+    treat the result the same as an empty response: write no_papers_skip.
+
+    date+1 is within the window (EDT midnight-offset); date+2 is not.
     """
     monday = datetime.date(2026, 4, 27)
-    tuesday = datetime.date(2026, 4, 28)
-    mock_client.results.return_value = [_make_result(tuesday)]
+    wednesday = monday + datetime.timedelta(days=2)  # date+2: outside window
+    mock_client.results.return_value = [_make_result(wednesday)]
     session = _make_session()
 
     result = await fetcher.fetch_papers(monday, session)

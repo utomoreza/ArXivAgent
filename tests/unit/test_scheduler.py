@@ -3,7 +3,10 @@
 Covers per the Definition of Done:
 - Backfill writes ``no_announcement`` for every Fri/Sat in the range without
   calling the pipeline.
-- Backfill is idempotent: exits immediately when DateRecord rows already exist.
+- Backfill is idempotent per-date: skips dates that already have complete
+  records (DateRecord + DailyDigest for published dates).
+- Backfill resumes interrupted dates: when a DateRecord(status=published)
+  exists but DailyDigest is missing, digest generation is re-run.
 - Backfill runs the full pipeline (fetch → process → detect → daily digest)
   for announcement days with published papers.
 - ``process_paper`` returning None does not call ``detect_groundbreaking``.
@@ -32,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.db.constants import DATE_STATUS_NO_ANNOUNCEMENT
+from src.db.constants import DATE_STATUS_NO_ANNOUNCEMENT, DATE_STATUS_PUBLISHED
 from src.scheduler.jobs import (
     _create_hnsw_index_if_needed,
     _run_daily_job,
@@ -86,19 +89,28 @@ _SUN_APR_26 = datetime.date(2026, 4, 26)  # Sunday   (next week)
 # ---------------------------------------------------------------------------
 
 
-def _make_session(has_records: bool = False) -> AsyncMock:
+def _make_session(scalar_return=None) -> AsyncMock:
     """Return a mock AsyncSession.
 
     Args:
-        has_records: When True, scalars().first() is truthy — simulating an
-            existing DateRecord row that triggers the idempotency exit.
+        scalar_return: Value returned by ``session.scalar()``.  Pass ``None``
+            (default) to simulate no existing record for a date (fresh start).
+            Pass a mock object to simulate a found DateRecord or DailyDigest.
+            Pass a callable (e.g. a side_effect list consumer) to vary returns
+            across multiple calls.
     """
     session = AsyncMock()
     session.add = MagicMock()
     session.commit = AsyncMock()
 
+    if callable(scalar_return) and not isinstance(scalar_return, MagicMock):
+        session.scalar = AsyncMock(side_effect=scalar_return)
+    else:
+        session.scalar = AsyncMock(return_value=scalar_return)
+
+    # Keep execute mock for any legacy usage (e.g. HNSW index tests)
     scalars_mock = MagicMock()
-    scalars_mock.first.return_value = MagicMock() if has_records else None
+    scalars_mock.first.return_value = None
     execute_result = MagicMock()
     execute_result.scalars.return_value = scalars_mock
     session.execute = AsyncMock(return_value=execute_result)
@@ -140,7 +152,7 @@ class TestBackfillNoAnnouncementDays:
 
     async def test_no_announcement_written_for_fri_sat(self):
         # Range: Fri Apr 17 → Sat Apr 18; today = Sun Apr 19
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -169,7 +181,7 @@ class TestBackfillNoAnnouncementDays:
         assert statuses.count(DATE_STATUS_NO_ANNOUNCEMENT) == 2
 
     async def test_no_announcement_dates_match_fri_sat(self):
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -199,10 +211,104 @@ class TestBackfillNoAnnouncementDays:
 
 
 class TestBackfillIdempotency:
-    """Backfill exits immediately when DateRecord rows already exist."""
+    """Backfill skips dates that already have a non-published (skip/failure) record."""
 
-    async def test_no_pipeline_called_when_records_exist(self):
-        session = _make_session(has_records=True)
+    async def test_no_pipeline_called_when_non_published_records_exist(self):
+        # All dates in range already have a non-published record (e.g. no_papers_skip)
+        # scalar() returns a DateRecord with status != published → pipeline not called.
+        existing_record = MagicMock()
+        existing_record.status = "no_papers_skip"
+        session = _make_session(scalar_return=existing_record)
+        factory = _make_session_factory(session)
+
+        with (
+            patch("src.scheduler.jobs.get_settings") as mock_settings,
+            patch("src.scheduler.jobs._today", return_value=_TUE_APR_14),
+            patch("src.scheduler.jobs.Fetcher") as mock_fetcher_cls,
+            patch("src.scheduler.jobs.DailyDigestGenerator") as mock_daily_cls,
+            patch("src.scheduler.jobs.WeeklyDigestGenerator") as mock_weekly_cls,
+        ):
+            mock_weekly_cls.return_value.generate = AsyncMock(return_value=None)
+            settings = MagicMock()
+            settings.INCEPTION_DATE = _MON_APR_13
+            mock_settings.return_value = settings
+
+            await run_inception_backfill(factory)
+
+        mock_fetcher_cls.return_value.fetch_papers.assert_not_called()
+        mock_daily_cls.return_value.generate.assert_not_called()
+        session.add.assert_not_called()
+
+    async def test_backfill_resumes_missing_digest_for_published_date(self):
+        """Interrupted backfill: DateRecord(published) exists but DailyDigest missing.
+
+        Digest generation must be called; Fetcher must NOT be called.
+        """
+        published_record = MagicMock()
+        published_record.status = DATE_STATUS_PUBLISHED
+
+        # scalar() returns: first call → published DateRecord, second call → None (no digest)
+        scalar_returns = [published_record, None]
+        session = _make_session(scalar_return=iter(scalar_returns).__next__)
+        # Make scalar consume from our list via side_effect
+        session.scalar = AsyncMock(side_effect=scalar_returns)
+        factory = _make_session_factory(session)
+
+        with (
+            patch("src.scheduler.jobs.get_settings") as mock_settings,
+            patch("src.scheduler.jobs._today", return_value=_TUE_APR_14),
+            patch("src.scheduler.jobs.Fetcher") as mock_fetcher_cls,
+            patch("src.scheduler.jobs.DailyDigestGenerator") as mock_daily_cls,
+            patch("src.scheduler.jobs.WeeklyDigestGenerator") as mock_weekly_cls,
+        ):
+            mock_daily_cls.return_value.generate = AsyncMock(return_value=None)
+            mock_weekly_cls.return_value.generate = AsyncMock(return_value=None)
+            settings = MagicMock()
+            settings.INCEPTION_DATE = _MON_APR_13
+            mock_settings.return_value = settings
+
+            await run_inception_backfill(factory)
+
+        mock_fetcher_cls.return_value.fetch_papers.assert_not_called()
+        mock_daily_cls.return_value.generate.assert_called_once_with(_MON_APR_13, session)
+
+    async def test_backfill_skips_fully_processed_published_date(self):
+        """Fully complete date: DateRecord(published) + DailyDigest both exist.
+
+        Neither fetcher nor generator must be called.
+        """
+        published_record = MagicMock()
+        published_record.status = DATE_STATUS_PUBLISHED
+        existing_digest = MagicMock()
+
+        # scalar() returns: first call → published DateRecord, second call → digest
+        scalar_returns = [published_record, existing_digest]
+        session = _make_session()
+        session.scalar = AsyncMock(side_effect=scalar_returns)
+        factory = _make_session_factory(session)
+
+        with (
+            patch("src.scheduler.jobs.get_settings") as mock_settings,
+            patch("src.scheduler.jobs._today", return_value=_TUE_APR_14),
+            patch("src.scheduler.jobs.Fetcher") as mock_fetcher_cls,
+            patch("src.scheduler.jobs.DailyDigestGenerator") as mock_daily_cls,
+            patch("src.scheduler.jobs.WeeklyDigestGenerator") as mock_weekly_cls,
+        ):
+            mock_weekly_cls.return_value.generate = AsyncMock(return_value=None)
+            settings = MagicMock()
+            settings.INCEPTION_DATE = _MON_APR_13
+            mock_settings.return_value = settings
+
+            await run_inception_backfill(factory)
+
+        mock_fetcher_cls.return_value.fetch_papers.assert_not_called()
+        mock_daily_cls.return_value.generate.assert_not_called()
+
+    async def test_backfill_skips_existing_no_announcement(self):
+        """Fri/Sat with existing DateRecord: no new record must be written."""
+        existing_record = MagicMock()
+        existing_record.status = DATE_STATUS_NO_ANNOUNCEMENT
+        session = _make_session(scalar_return=existing_record)
         factory = _make_session_factory(session)
 
         with (
@@ -212,16 +318,16 @@ class TestBackfillIdempotency:
             patch("src.scheduler.jobs.DailyDigestGenerator") as mock_daily_cls,
             patch("src.scheduler.jobs.WeeklyDigestGenerator") as mock_weekly_cls,
         ):
+            mock_weekly_cls.return_value.generate = AsyncMock(return_value=None)
             settings = MagicMock()
-            settings.INCEPTION_DATE = _MON_APR_13
+            settings.INCEPTION_DATE = _FRI_APR_17
             mock_settings.return_value = settings
 
             await run_inception_backfill(factory)
 
+        session.add.assert_not_called()
         mock_fetcher_cls.return_value.fetch_papers.assert_not_called()
         mock_daily_cls.return_value.generate.assert_not_called()
-        mock_weekly_cls.return_value.generate.assert_not_called()
-        session.add.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +343,7 @@ class TestBackfillPipeline:
         mock_arxiv_result = MagicMock()
         mock_paper = MagicMock()
 
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -268,7 +374,7 @@ class TestBackfillPipeline:
         # process_paper returns None (e.g. duplicate arXiv ID) — detect skipped
         mock_arxiv_result = MagicMock()
 
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -295,7 +401,7 @@ class TestBackfillPipeline:
 
     async def test_pipeline_skipped_for_non_published_fetch(self):
         # Non-published fetch → process/detect/daily must not be called
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -327,7 +433,7 @@ class TestBackfillPipeline:
         # second must still run. Fetch returns published so the generator is reached.
         mock_arxiv_result = MagicMock()
 
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -369,7 +475,7 @@ class TestBackfillWeeklyGenerator:
 
     async def test_weekly_generator_called_once_for_one_week(self):
         # Range: Sun Apr 19 → Sat Apr 25; today = Sun Apr 26
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -398,7 +504,7 @@ class TestBackfillWeeklyGenerator:
 
     async def test_weekly_generator_called_twice_for_two_weeks(self):
         # Range: Sun Apr 19 → Thu Apr 30; today = Fri May 1 → two weeks
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -429,7 +535,7 @@ class TestBackfillWeeklyGenerator:
 
     async def test_weekly_called_for_partial_week_starting_before_inception(self):
         # inception = Mon Apr 13 (mid-week); derived week_start = Sun Apr 12
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
@@ -458,7 +564,7 @@ class TestBackfillWeeklyGenerator:
 
     async def test_weekly_generator_none_does_not_halt_backfill(self):
         # Two weeks; first generate returns None, second should still run.
-        session = _make_session(has_records=False)
+        session = _make_session()
         factory = _make_session_factory(session)
 
         with (
