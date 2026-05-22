@@ -404,4 +404,12 @@ When all tasks are `[X]` or only blocked tasks remain:
    - Tasks skipped with blocker references
    - Final test count, pass rate, and overall coverage
    - Any remaining work before the branch is ready to merge
-4. Stop
+4. Run the app in a new session with given `.env`, 
+   and test if all features running as expected, 
+   including testing all endpoints using `curl`
+5. Only if any feature not running as expected:
+   - write the issue(s) to `BLOCKERS.md`,
+   - plan your new tasks to solve the new issue and write the tasks to `ORCHESTRATOR_STATE.md`,
+   - spawn Developer, Reviewer, and QA agents as you did in `## Main loop` to execute the tasks one by one
+6. Only if all features running as expected, go to step 7; otherwise, go to step 4 again
+7. Stop

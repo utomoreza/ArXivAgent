@@ -14,6 +14,6 @@ sleep 60
 # 3. Execute the command and log it
 echo "[entrypoint] ready to run claude"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-stdbuf -oL -eL claude --verbose --dangerously-skip-permissions "$(cat /workspace/scripts/autonomous_dev.md)" 2>&1 | stdbuf -oL tee "/workspace/logs/session_${TIMESTAMP}.log"
+# stdbuf -oL -eL claude --verbose --dangerously-skip-permissions "$(cat /workspace/scripts/autonomous_dev.md)" 2>&1 | stdbuf -oL tee "/workspace/logs/session_${TIMESTAMP}.log"
 
 exec "$@"

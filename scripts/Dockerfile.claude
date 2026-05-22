@@ -1,7 +1,20 @@
+# docker build \
+#   --build-arg UID=$(id -u) \
+#   -f scripts/Dockerfile.claude \
+#   -t claude-code-runner .
+
+# docker run --rm -it \
+#   --name arxivagent-dev \
+#   -d \
+#   -v "$(pwd)":/workspace \
+#   --network arxivagent_network \
+#   claude-code-runner bash
+
+
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y \
-    git curl nodejs npm iputils-ping coreutils \
+    git curl nodejs npm iputils-ping coreutils sudo tmux \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
