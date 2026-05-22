@@ -78,7 +78,7 @@ async def parse_structured[T: BaseModel](
     start = time.monotonic()
     response = await _client.messages.parse(
         model=model,
-        max_tokens=2048,
+        max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
         output_format=output_schema,
     )
